@@ -1,0 +1,899 @@
+/****************************************************************
+Copyright 1990, 1993 by AT&T Bell Laboratories, Bellcore.
+
+Permission to use, copy, modify, and distribute this software
+and its documentation for any purpose and without fee is hereby
+granted, provided that the above copyright notice appear in all
+copies and that both that the copyright notice and this
+permission notice and warranty disclaimer appear in supporting
+documentation, and that the names of AT&T Bell Laboratories or
+Bellcore or any of their entities not be used in advertising or
+publicity pertaining to distribution of the software without
+specific, written prior permission.
+
+AT&T and Bellcore disclaim all warranties with regard to this
+software, including all implied warranties of merchantability
+and fitness.  In no event shall AT&T or Bellcore be liable for
+any special, indirect or consequential damages or any damages
+whatsoever resulting from loss of use, data or profits, whether
+in an action of contract, negligence or other tortious action,
+arising out of or in connection with the use or performance of
+this software.
+****************************************************************/
+
+%{
+
+#ifdef DEBUG
+#   define YYDEBUG 1
+#endif
+
+#define NOEXT(x)
+
+#include <iostream>
+#include <f77crash/crossrefs.h>
+#include <f77crash/cursor.h>
+#include <f77crash/lex.h>
+
+%}
+
+/* Specify precedences and associativities. */
+
+%union  {
+        int           ival;
+        char          *sval;
+        const Cursor  *curs;
+        }
+
+%left SCOMMA
+%nonassoc SCOLON
+%right SEQUALS
+%left SEQV SNEQV
+%left SOR
+%left SAND
+%left SNOT
+%nonassoc SLT SGT SLE SGE SEQ SNE
+%left SCONCAT
+%left SPLUS SMINUS
+%left SSTAR SSLASH
+%right SPOWER
+
+%start program
+%type <ival>  type typespec typename dcl label
+%type <sval>  SICON
+%type <curs>  name entryname progname
+
+%%
+
+program:
+        | program stat SEOS
+        ;
+
+stat:     thislabel  entry
+                {}
+        | thislabel  spec
+        | thislabel  exec
+                {}
+        | thislabel SINCLUDE filename
+                {}
+        | thislabel  SEND  end_spec
+                {}
+        | thislabel SUNKNOWN
+                {}
+        | error
+                {}
+        ;
+
+thislabel:  SLABEL
+        {
+/*
+            if (yyStatementNumber) {
+                std::cerr << "Label " << yyStatementNumber
+                          << " define in line " << lineNumber
+                          << std::endl;
+            }
+*/
+        }
+        ;
+
+entry:    SPROGRAM new_proc progname
+                {
+                    CrossRefs::defs[*($3)] = "PROGRAM";
+                    CrossRefs::currentRoutine = ($3)->content;
+                }
+        | SPROGRAM new_proc progname progarglist
+                {
+                    CrossRefs::defs[*($3)] = "PROGRAM";
+                    CrossRefs::currentRoutine = ($3)->content;
+                }
+        | SBLOCK new_proc progname
+                {}
+        | SSUBROUTINE new_proc entryname arglist
+                {
+                    CrossRefs::defs[*($3)] = "SUBROUTINE";
+                    CrossRefs::currentRoutine = ($3)->content;
+                }
+        | SRECURSIVE new_proc entryname arglist
+                {
+                    CrossRefs::defs[*($3)] = "SUBROUTINE";
+                    CrossRefs::currentRoutine = ($3)->content;
+                }
+         | SFUNCTION new_proc entryname arglist
+                {
+                    CrossRefs::defs[*($3)] = "FUNCTION";
+                    CrossRefs::currentRoutine = ($3)->content;
+                }
+        | type SFUNCTION new_proc entryname arglist
+                {
+                    CrossRefs::defs[*($4)] = "FUNCTION";
+                    CrossRefs::currentRoutine = ($4)->content;
+                }
+        | SENTRY entryname arglist
+                {}
+        ;
+
+new_proc:
+                {}
+        ;
+
+entryname:  name
+                {
+                    $$ = $1;
+                }
+        ;
+
+name:   SNAME
+                {
+                    CrossRefs::name[cursor] = cursor.content;
+                    $$ = &(CrossRefs::name.find(cursor)->first);
+                }
+        ;
+
+progname:
+                {
+                    $$ = &voidCursor;
+                }
+        | entryname
+                {
+                    $$ = $1;
+                }
+        ;
+
+progarglist:
+          SLPAR SRPAR
+        | SLPAR progargs SRPAR
+        ;
+
+progargs: progarg
+        | progargs SCOMMA progarg
+        ;
+
+progarg:  SNAME
+        | SNAME SEQUALS SNAME
+        ;
+
+arglist:
+                {}
+        | SLPAR SRPAR
+                {}
+        | SLPAR args SRPAR
+                {}
+        ;
+
+args:     arg
+                {}
+        | args SCOMMA arg
+                {}
+        ;
+
+arg:          name
+                {
+                    CrossRefs::args[($1)->content] = *($1);
+                }
+        | SSTAR
+                { }
+        ;
+
+
+
+filename:   SHOLLERITH
+                {}
+        ;
+spec:      dcl
+    | common
+    | external
+    | intrinsic
+    | equivalence
+    | data
+    | implicit
+    | namelist
+    | SSAVE
+        {}
+    | SSAVE savelist
+        {}
+    | SFORMAT
+        {
+            flushLine();
+        }
+    | SPARAM in_dcl SLPAR paramlist SRPAR
+        {}
+    ;
+
+dcl:  type opt_comma name in_dcl new_dcl dims lengspec
+        {
+            const Cursor *nameCursor = $3;
+
+            CrossRefs::declaration[nameCursor->content] = *nameCursor;
+            CrossRefs::variable[nameCursor->content]    = lineNumber;
+        }
+    | dcl SCOMMA name dims lengspec
+        {
+            const Cursor *nameCursor = $3;
+
+            CrossRefs::declaration[nameCursor->content] = *nameCursor;
+            CrossRefs::variable[nameCursor->content]    = lineNumber;
+        }
+    | dcl SSLASHD datainit vallist SSLASHD
+        {
+        }
+    ;
+
+new_dcl:    {
+                //printf("new_dcl\n");
+            }
+    ;
+
+type:      typespec lengspec
+        {
+            $$ = $1;
+        }
+    ;
+
+typespec:  typename
+        {
+            $$ = $1;
+        }
+    ;
+
+typename:     SINTEGER   { $$ = 1; }
+            | SREAL      { $$ = 2; }
+            | SCOMPLEX   { $$ = 3; }
+            | SDOUBLE    { $$ = 4; }
+            | SDCOMPLEX  { $$ = 5; }
+            | SLOGICAL   { $$ = 6; }
+            | SCHARACTER { $$ = 7; }
+            | SUNDEFINED { $$ = 8; }
+            | SDIMENSION { $$ = 9; }
+            | SAUTOMATIC { NOEXT("AUTOMATIC statement"); $$ = 10; }
+            | SSTATIC    { NOEXT("STATIC statement"); $$ = 11; }
+            | SBYTE      { $$ = 12; }
+    ;
+
+lengspec:
+        {
+        }
+    | SLPAR expr SRPAR
+        {
+            // this rule was added as a hack
+        }
+    | SSTAR intonlyon expr intonlyoff
+        {
+        }
+    | SSTAR intonlyon SLPAR SSTAR SRPAR intonlyoff
+        {
+        }
+    ;
+
+common:      SCOMMON in_dcl var
+        { }
+    | SCOMMON in_dcl comblock var
+        { }
+    | common opt_comma comblock opt_comma var
+        { }
+    | common SCOMMA var
+        { }
+    ;
+
+comblock:  SCONCAT
+        { }
+    | SSLASH SNAME SSLASH
+        { }
+    ;
+
+external: SEXTERNAL in_dcl name
+        {
+            CrossRefs::external[cursor.content] = cursor.fromLine;
+            CrossRefs::call[CrossRefs::currentRoutine].push_back(cursor.content);
+        }
+    | external SCOMMA name
+        {
+            CrossRefs::external[cursor.content] = cursor.fromLine;
+            CrossRefs::call[CrossRefs::currentRoutine].push_back(cursor.content);
+        }
+    ;
+
+intrinsic:  SINTRINSIC in_dcl name
+        {
+            CrossRefs::intrinsic[cursor.content] = cursor.fromLine;
+        }
+    | intrinsic SCOMMA name
+        {
+            CrossRefs::intrinsic[cursor.content] = cursor.fromLine;
+        }
+    ;
+
+equivalence:  SEQUIV in_dcl equivset
+    | equivalence SCOMMA equivset
+    ;
+
+equivset:  SLPAR equivlist SRPAR
+        { }
+    ;
+
+equivlist:  lhs
+        { }
+    | equivlist SCOMMA lhs
+        { }
+    ;
+
+data:      SDATA in_data datalist
+    | data opt_comma datalist
+    ;
+
+in_data:
+        { }
+    ;
+
+datalist:  datainit datavarlist SSLASH datapop vallist SSLASH
+        { }
+    ;
+
+datainit: /* nothing */ { } ;
+
+datapop: /* nothing */ { } ;
+
+vallist:  { }  val
+    | vallist SCOMMA val
+    ;
+
+val:      value
+        { }
+    | simple SSTAR value
+        { }
+    ;
+
+value:      simple
+    | addop simple
+        { }
+    | complex_const
+    ;
+
+savelist: saveitem
+    | savelist SCOMMA saveitem
+    ;
+
+saveitem: name
+        { }
+    | comblock
+    ;
+
+paramlist:  paramitem
+    | paramlist SCOMMA paramitem
+    ;
+
+paramitem:  name SEQUALS expr
+        { }
+    ;
+
+var:      name dims
+        {}
+    ;
+
+datavar:      lhs
+        { }
+    | SLPAR datavarlist SCOMMA dospec SRPAR
+        { }
+    ;
+
+datavarlist: datavar
+        { }
+    | datavarlist SCOMMA datavar
+        { }
+    ;
+
+dims:
+        {
+        }
+    | SLPAR dimlist SRPAR
+        {
+        }
+    ;
+
+dimlist:   { }   dim
+    | dimlist SCOMMA dim
+    ;
+
+dim:      ubound
+        { }
+    | expr SCOLON ubound
+        { }
+    ;
+
+ubound:      SSTAR
+        { }
+    | expr
+    ;
+
+labellist: label
+        { }
+    | labellist SCOMMA label
+        { }
+    ;
+
+label:  SICON
+        {
+/*
+            std::cerr << "label:" << std::endl;
+            std::cerr << "      token = "   << token << std::endl;
+            std::cerr << "      content = " << Cursor::content << std::endl;
+            std::cerr << "      stno = "    << yyStatementNumber << std::endl;
+            $$ = atoi(token);
+*/
+        }
+    ;
+
+implicit:  SIMPLICIT in_dcl implist
+        { }
+    | implicit SCOMMA implist
+    | SIMPLICITNONE
+    ;
+
+implist:  imptype SLPAR letgroups SRPAR
+    | imptype
+        { }
+    ;
+
+imptype:   { } type
+    ;
+
+letgroups: letgroup
+    | letgroups SCOMMA letgroup
+    ;
+
+letgroup:  letter
+        { }
+    | letter SMINUS letter
+        { }
+    ;
+
+letter:  SNAME
+        { }
+    ;
+
+namelist:    SNAMELIST
+    | namelist namelistentry
+    ;
+
+namelistentry:  SSLASH name SSLASH namelistlist
+        { }
+    ;
+
+namelistlist:  name
+        { }
+    | namelistlist SCOMMA name
+        { }
+    ;
+
+in_dcl:
+        { }
+    ;
+funarglist:
+                {}
+        | funargs
+                {}
+        ;
+
+funargs:  expr
+                {}
+        | funargs SCOMMA expr
+                {}
+        ;
+
+
+expr:          uexpr
+        | SLPAR expr SRPAR        {}
+        | complex_const
+        ;
+
+uexpr:          lhs
+        | simple_const
+        | expr addop expr   %prec SPLUS
+                {}
+        | expr SSTAR expr
+                {}
+        | expr SSLASH expr
+                {}
+        | expr SPOWER expr
+                {}
+        | addop expr  %prec SSTAR
+                {}
+        | expr relop expr  %prec SEQ
+                {}
+        | expr SEQV expr
+                { }
+        | expr SNEQV expr
+                { }
+        | expr SOR expr
+                {}
+        | expr SAND expr
+                {}
+        | SNOT expr
+                {}
+        | expr SCONCAT expr
+                { }
+        ;
+
+addop:          SPLUS                {}
+        | SMINUS        {}
+        ;
+
+relop:          SEQ        {}
+        | SGT        {}
+        | SLT        {}
+        | SGE        {}
+        | SLE        {}
+        | SNE        {}
+        ;
+
+lhs:      name
+                {}
+        | name substring
+                {}
+        | name SLPAR funarglist SRPAR
+                {}
+        | name SLPAR funarglist SRPAR substring
+                {}
+        ;
+
+substring:  SLPAR opt_expr SCOLON opt_expr SRPAR
+                {}
+        ;
+
+opt_expr:
+                {}
+        | expr
+        ;
+
+simple:          name
+                {}
+        | simple_const
+        ;
+
+simple_const:   STRUE   {}
+        | SFALSE        {}
+        | SHOLLERITH    {}
+        | SICON         {}
+        | SRCON         {}
+        | SDCON         {}
+        | bit_const
+        ;
+
+complex_const:  SLPAR uexpr SCOMMA uexpr SRPAR
+                {}
+        ;
+
+bit_const:  SHEXCON
+                { NOEXT("hex constant");}
+        | SOCTCON
+                { NOEXT("octal constant");}
+        | SBITCON
+                { NOEXT("binary constant");}
+        ;
+
+fexpr:          unpar_fexpr
+        | SLPAR fexpr SRPAR
+                {}
+        ;
+
+unpar_fexpr:          lhs
+        | simple_const
+        | fexpr addop fexpr   %prec SPLUS
+                {}
+        | fexpr SSTAR fexpr
+                {}
+        | fexpr SSLASH fexpr
+                {}
+        | fexpr SPOWER fexpr
+                {}
+        | addop fexpr  %prec SSTAR
+                {}
+        | fexpr SCONCAT fexpr
+                { }
+        ;
+
+exec:   iffable
+        | begin_do end_spec label opt_comma dospecw
+        {
+//            std::cerr << "DO LABEL = " << $3 << std::endl;
+        }
+        | begin_do end_spec opt_comma dospecw
+        {
+            NOEXT("DO without label");
+//            std::cerr << "DO-loop expecting enddo in line "
+//                      << lineNumber
+//                      << std::endl;
+        }
+        | SENDDO
+                {
+//                    std::cerr << "ENDDO: " << Cursor::content
+//                              << " line " << Cursor::fromLine
+//                              << std::endl;
+                }
+        | logif iffable
+                {}
+        | logif STHEN
+        | SELSEIF end_spec SLPAR {} expr SRPAR STHEN
+                {}
+        | SELSE end_spec
+                {}
+        | SENDIF end_spec
+                {}
+        ;
+
+begin_do:   SDO
+        {
+//            std::cerr << "DO loop > " << Cursor::content
+//                     << " line " << Cursor::fromLine
+//                     << std::endl;
+        }
+        ;
+
+logif:  SLOGIF end_spec SLPAR expr SRPAR
+        {}
+        ;
+
+dospec:          name SEQUALS exprlist
+                {}
+        ;
+
+dospecw:  dospec
+        | SWHILE {} SLPAR expr SRPAR
+                {}
+        ;
+
+iffable:  let lhs SEQUALS expr
+                {}
+        | SASSIGN end_spec assignlabel STO name
+                {}
+        | SCONTINUE end_spec
+        | goto
+        | io
+                {}
+        | SARITHIF end_spec SLPAR expr SRPAR label SCOMMA label SCOMMA label
+                {}
+        | call
+                {}
+        | call SLPAR SRPAR
+                {}
+        | call SLPAR callarglist SRPAR
+                {}
+        | SRETURN end_spec opt_expr
+                {}
+        | stop end_spec opt_expr
+                {}
+        ;
+
+assignlabel:   SICON
+                {}
+        ;
+
+let:          SLET
+                {
+                }
+        ;
+
+goto:          SGOTO end_spec label
+                {}
+        | SASGOTO end_spec name
+                {}
+        | SASGOTO end_spec name opt_comma SLPAR labellist SRPAR
+                {}
+        | SCOMPGOTO end_spec SLPAR labellist SRPAR opt_comma expr
+                {}
+        ;
+
+opt_comma:
+        | SCOMMA
+        ;
+
+call:   SCALL end_spec name
+                { }
+        ;
+
+callarglist:  callarg
+                {}
+        | callarglist SCOMMA callarg
+                {}
+        ;
+
+callarg:  expr
+        | SSTAR label
+                {}
+        ;
+
+stop:          SPAUSE
+                {}
+        | SSTOP
+                {}
+        ;
+
+exprlist:  expr
+                {}
+        | exprlist SCOMMA expr
+                {}
+        ;
+
+end_spec:
+                {}
+        ;
+
+intonlyon:
+                {}
+        ;
+
+intonlyoff:
+                {}
+        ;
+  /*  Input/Output Statements */
+
+io:          io1
+                {}
+        ;
+
+io1:      iofmove ioctl
+        | iofmove unpar_fexpr
+                {}
+        | iofmove SSTAR
+                {}
+        | iofmove SPOWER
+                {}
+        | iofctl ioctl
+        | read ioctl
+                {}
+        | read infmt
+                {}
+        | read ioctl inlist
+                {}
+        | read infmt SCOMMA inlist
+                {}
+        | read ioctl SCOMMA inlist
+                {}
+        | write ioctl
+                {}
+        | write ioctl outlist
+                {}
+        | write ioctl SCOMMA outlist
+                {}
+        | print
+                {}
+        | print SCOMMA outlist
+                {}
+        ;
+
+iofmove:  fmkwd end_spec in_ioctl
+        ;
+
+fmkwd:    SBACKSPACE
+                {}
+        | SREWIND
+                {}
+        | SENDFILE
+                {}
+        ;
+
+iofctl:  ctlkwd end_spec in_ioctl
+        ;
+
+ctlkwd:   SINQUIRE
+                {}
+        | SOPEN
+                {}
+        | SCLOSE
+                {}
+        ;
+
+infmt:    unpar_fexpr
+                {}
+        | SSTAR
+                {}
+        ;
+
+ioctl:    SLPAR fexpr SRPAR
+                {}
+        | SLPAR ctllist SRPAR
+                {}
+        ;
+
+ctllist:  ioclause
+        | ctllist SCOMMA ioclause
+        ;
+
+ioclause: fexpr
+                {}
+        | SSTAR
+                {}
+        | SPOWER
+                {}
+        | nameeq expr
+                {}
+        | nameeq SSTAR
+                {}
+        | nameeq SPOWER
+                {}
+        ;
+
+nameeq:  SNAMEEQ
+                {}
+        ;
+
+read:    SREAD end_spec in_ioctl
+                {}
+        ;
+
+write:   SWRITE end_spec in_ioctl
+                {}
+        ;
+
+print:    SPRINT end_spec fexpr in_ioctl
+                {}
+        | SPRINT end_spec SSTAR in_ioctl
+                {}
+        ;
+
+inlist:   inelt
+                {}
+        | inlist SCOMMA inelt
+                {}
+        ;
+
+inelt:    lhs
+                {}
+        | SLPAR inlist SCOMMA dospec SRPAR
+                {}
+        ;
+
+outlist:  uexpr
+                {}
+        | other
+                {}
+        | out2
+        ;
+
+out2:     uexpr SCOMMA uexpr
+                {}
+        | uexpr SCOMMA other
+                {}
+        | other SCOMMA uexpr
+                {}
+        | other SCOMMA other
+                {}
+        | out2  SCOMMA uexpr
+                {}
+        | out2  SCOMMA other
+                {}
+        ;
+
+other:    complex_const
+                {}
+        | SLPAR expr SRPAR
+                {}
+        | SLPAR uexpr SCOMMA dospec SRPAR
+                {}
+        | SLPAR other SCOMMA dospec SRPAR
+                {}
+        | SLPAR out2  SCOMMA dospec SRPAR
+                {}
+        ;
+
+in_ioctl:
+                {}
+        ;
