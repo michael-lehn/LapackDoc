@@ -45,4 +45,4 @@ clean:
 
 .PHONY: veryclean
 veryclean: clean
-	$(RM) fortran.cc fortran.y tokens.h $(DEP_FILES)
+	$(RM) fortran.cc fortran.y fortran.h tokens.h $(DEP_FILES)
