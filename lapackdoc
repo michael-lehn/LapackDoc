@@ -1,0 +1,194 @@
+#! /usr/bin/perl -w
+use strict;
+
+BEGIN {
+    unshift(@INC, "$ENV{LAPACKDOC}");
+}
+
+
+use File::Basename;
+use File::Spec;
+
+use Config;
+use Convert;
+use Deps;
+use Doc;
+use DocUtils;
+
+my $header = DocUtils->LoadLinebuffer(path => $Config::templateDir,
+                                      file => "header");
+my $footer = DocUtils->LoadLinebuffer(path => $Config::templateDir,
+                                      file => "footer");
+
+
+DocUtils->Install(file => File::Spec->catfile($Config::templateDir,
+                                              "default.css"),
+                  to   => $Config::htmlDir);
+
+DocUtils->Install(file => File::Spec->catfile($Config::templateDir,
+                                              "wz_tooltip.js"),
+                  to   => $Config::htmlDir);
+
+my @source = DocUtils->FindFiles(path => $ENV{PWD}, pattern => '.*\.f$');
+
+
+#
+#  Create crash-files and deps-files
+#
+foreach my $source (@source) {
+    my ($filename, $directories, $suffix) = fileparse($source, (".f") );
+
+    my $crash = File::Spec->catfile($Config::tmpDir, "$source.crash");
+    my $deps  = File::Spec->catfile($Config::tmpDir, "$source.deps");
+
+    unless (DocUtils->IsNewerThan(file1 => $source, file2 => $crash)) {
+        Deps->Update(depsFile => $deps);
+        next;
+    }
+
+    DocUtils->Mkdir(file => $crash);
+    DocUtils->Mkdir(file => $deps);
+
+    printf STDERR "Processing '$source':\n";
+    printf STDERR "  Creating '$crash'\n";
+    printf STDERR "   ... and '$deps'\n";
+    system("$Config::f77crash $source >$crash 2>$deps");
+
+    Deps->Update(depsFile => $deps);
+
+    printf STDERR "   ... done.\n";
+}
+
+
+#
+#  Convert sourcefiles
+#
+foreach my $source (@source) {
+    my ($srcfilename, $srcdir, $suffix) = fileparse($source, (".f") );
+
+    my $crash     = File::Spec->catfile($Config::tmpDir, "${source}.crash");
+    my $deps      = File::Spec->catfile($Config::tmpDir, "${source}.deps");
+    my $htmlFile  = File::Spec->catfile($Config::htmlDir, "${source}.html");
+
+    unless (DocUtils->IsNewerThan(file1 => $crash, file2 => $htmlFile))
+    {
+        next;
+    }
+
+    printf STDERR "Creating $htmlFile ...";
+
+    my $htmlCode = Convert->Fortran(sourcefile => $source,
+                                    crashfile  => $crash);
+
+    my $htmlVars = {
+        "TITLE"         => $source,
+        "DEFAULT_CSS"   => File::Spec->catfile(
+                                         File::Spec->abs2rel("", $srcdir),
+                                         $Config::css),
+        "WZ_TOOLTIP_JS" => File::Spec->catfile(
+                                         File::Spec->abs2rel("", $srcdir),
+                                         $Config::tooltip),
+        "FILETREE"      => "",
+    };
+
+    DocUtils->SaveLinebuffer(file     => $htmlFile,
+                             linesRef => $header,
+                             filter   => $htmlVars);
+    DocUtils->SaveLinebuffer(file     => $htmlFile,
+                             linesRef => $htmlCode,
+                             append   => 1,
+                             filter   => $htmlVars);
+    DocUtils->SaveLinebuffer(file     => $htmlFile,
+                             linesRef => $footer,
+                             append   => 1,
+                             filter   => $htmlVars);
+
+    printf STDERR " done.\n";
+}
+
+
+#
+#  Extract embedded documentation
+#
+foreach my $source (@source) {
+    my ($srcfilename, $srcdir, $suffix) = fileparse($source, (".f") );
+
+    my $crash    = File::Spec->catfile($Config::tmpDir, "${source}.crash");
+    my $srcFile  = File::Spec->catfile($Config::htmlDir, "${source}.html");
+    my $docFile  = File::Spec->catfile($Config::htmlDir, $srcdir,
+                                       "${srcfilename}.html");
+
+    unless (DocUtils->IsNewerThan(file1 => $source, file2 => $docFile)) {
+        next;
+    }
+
+    DocUtils->Mkdir(file => $docFile);
+
+    my $docCode = Doc->Extract(sourceFile => $source,
+                               crashFile  => $crash);
+
+    unless ($docCode) {
+        next;
+    }
+
+    printf STDERR "Processing '$srcFile':\n";
+    printf STDERR "  Creating '$docFile'\n";
+
+    my $sub = lc($srcfilename);
+    printf STDERR "  Creating call graph for '$sub' ...\n";
+    Deps->Dump(call => $sub);
+
+    printf STDERR "  Creating caller graph for '$sub' ...\n";
+    Deps->Dump(caller => $sub);
+
+
+    Doc->AddGraphs(htmlRef => $docCode);
+
+    my $htmlVars = {
+        "TITLE"         => $srcfilename,
+        "DEFAULT_CSS"   => File::Spec->catfile(
+                                         File::Spec->abs2rel("", $srcdir),
+                                         $Config::css),
+        "WZ_TOOLTIP_JS" => File::Spec->catfile(
+                                         File::Spec->abs2rel("", $srcdir),
+                                         $Config::tooltip),
+        "FILETREE"      => "",
+    };
+
+    DocUtils->SaveLinebuffer(file     => $docFile,
+                             linesRef => $header,
+                             filter   => $htmlVars);
+    DocUtils->SaveLinebuffer(file     => $docFile,
+                             linesRef => $docCode,
+                             append   => 1,
+                             filter   => $htmlVars);
+    DocUtils->SaveLinebuffer(file     => $docFile,
+                             linesRef => $footer,
+                             append   => 1,
+                             filter   => $htmlVars);
+
+    printf STDERR "   ... done.\n";
+}
+
+
+
+
+#  foreach my $sub (keys %Deps::external) {
+#      printf STDERR "Creating call graph for '$sub' ...";
+#      Deps->Dump(call => $sub);
+#      printf STDERR " done.\n";
+#
+#      printf STDERR "Creating caller graph for '$sub' ...";
+#      Deps->Dump(caller => $sub);
+#      printf STDERR " done.\n";
+#  }
+
+#  Deps->Dump(call => "dlapy2");
+#  Deps->Dump(caller => "dlapy2");
+#
+#  Deps->Dump(call => "dgeqp3");
+#  Deps->Dump(caller => "dgeqp3");
+#
+#  Deps->Dump(call => "dgeqrf");
+#  Deps->Dump(caller => "dgeqrf");
+
