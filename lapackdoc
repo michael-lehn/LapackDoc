@@ -14,6 +14,7 @@ use Convert;
 use Deps;
 use Doc;
 use DocUtils;
+use Filetree;
 
 my $header = DocUtils->LoadLinebuffer(path => $Config::templateDir,
                                       file => "header");
@@ -170,6 +171,51 @@ foreach my $source (@source) {
     printf STDERR "   ... done.\n";
 }
 
+my @dir = DocUtils->ExtractDirectories(files => \@source,
+                                       allParentDirectories => 1);
+push(@dir, ".");
+
+my @sourcefile = Filetree->CompressFileList(\@source);
+
+print STDERR "\n";
+print STDERR "[INFO] Creating filetrees:\n";
+
+foreach my $dir (@dir) {
+    print STDERR "[INFO] Creating filetree for \"$dir/\"\n";
+
+    my $filename = File::Spec->catfile($Config::htmlDir, $dir, "dir.html");
+    my $filetree = Filetree->new(directory   => $dir,
+                                 allFiles    => \@sourcefile);
+
+    my $relDir = File::Spec->abs2rel("", $dir);
+
+    if ($dir eq ".") {
+        $relDir = ".";
+        $dir    = "";
+    }
+
+    my $htmlVars = {
+        "TITLE"         => "/". $dir,
+        "DEFAULT_CSS"   => File::Spec->catfile($relDir, $Config::css),
+        "WZ_TOOLTIP_JS" => File::Spec->catfile($relDir, $Config::tooltip),
+        "FILETREE"      => "",
+    };
+
+    DocUtils->SaveLinebuffer(file     => $filename,
+                             linesRef => $header,
+                             filter   => $htmlVars);
+    DocUtils->SaveLinebuffer(file     => $filename,
+                             linesRef => $filetree->html(dir => $dir),
+                             append   => 1,
+                             filter   => $htmlVars);
+    DocUtils->SaveLinebuffer(file     => $filename,
+                             linesRef => $footer,
+                             append   => 1,
+                             filter   => $htmlVars);
+
+
+    print STDERR "[INFO]  ... done.\n";
+}
 
 
 

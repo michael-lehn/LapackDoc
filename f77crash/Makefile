@@ -5,11 +5,13 @@ CXX_SOURCE_FILES  = $(sort $(wildcard *.cc) fortran.cc)
 OBJECT_FILES      = $(patsubst %.cc,%.o,$(CXX_SOURCE_FILES))
 DEP_FILES         = $(patsubst %.cc,%.d,$(CXX_SOURCE_FILES))
 
+GENERATE_FILES    = fortran.cc fortran.h fortran.y tokens.h
+
 CXXFLAGS += -I.. -Wall -Werror -std=c++11
 
 all : $(TARGET)
 
-$(TARGET): tokens.h fortran.h fortran.cc $(DEP_FILES) $(OBJECT_FILES)
+$(TARGET): $(GENERATE_FILES) $(DEP_FILES) $(OBJECT_FILES)
 	$(CXX) $(OBJECT_FILES) -o $(TARGET)
 
 tokens.h : tokens
@@ -21,7 +23,7 @@ tokens.h : tokens
 	 echo "\n#endif // F77CRASH_TOKENS_H") > tokens.h; \
 	$(RM) tokens.h.tmp
 
-%.d: %.cc
+%.d: %.cc $(GENERATE_FILES)
 	set -e; rm -f $@; \
     $(CXX) -M $(CXXFLAGS) $< > $@.$$$$; \
     sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
@@ -31,7 +33,7 @@ ifeq (0, $(words $(findstring $(MAKECMDGOALS), $(NODEPS))))
 -include $(DEP_FILES)
 endif
 
-fortran.h fortran.cc: fortran.y.in tokens.h
+fortran.h fortran.cc fortran.y: fortran.y.in tokens.h
 	( grep "#define S" tokens.h | sed "s/#define/%token/" ;\
 	cat fortran.y.in ) > fortran.y; \
 	bison --defines=fortran.h -o fortran.cc fortran.y
@@ -45,4 +47,4 @@ clean:
 
 .PHONY: veryclean
 veryclean: clean
-	$(RM) fortran.cc fortran.y fortran.h tokens.h $(DEP_FILES)
+		$(RM) $(GENERATE_FILES) $(DEP_FILES)

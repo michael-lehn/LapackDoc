@@ -118,6 +118,74 @@ sub FindFiles
     return @filelist;
 }
 
+sub ParentDirectory
+{
+    my $class = shift;
+    my %args = (path => undef,
+                @_);
+
+    my @paths = split("/", $args{path});
+    pop(@paths);
+    return join("/", @paths);
+}
+
+sub ParentDirectories
+{
+    my $class = shift;
+    my %args = (path => undef,
+                @_);
+
+    my @paths = split("/", $args{path});
+
+    my @dirs;
+    for (my $i=0; $i<$#paths; ++$i) {
+        push(@dirs, join("/", @paths[0..$i]));
+    }
+    return @dirs;
+}
+
+sub ExtractDirectories
+{
+    my $class = shift;
+    my %args = (files                => undef,
+                allParentDirectories => 0,
+                @_);
+
+    my %dirs;
+    foreach my $file (@{$args{files}}) {
+        my $dir = $class->Path(fullpath => $file);
+        next if defined $dirs{$dir};
+
+        $dirs{$dir} = 1;
+
+        if ($args{allParentDirectories}) {
+            foreach my $parent ($class->ParentDirectories(path => $dir)) {
+                $dirs{$parent} = 1;
+            }
+        }
+    }
+    return sort keys %dirs;
+}
+
+######
+##
+## HANDLING OF FILENAMES, PATHS, ...
+##
+######
+
+sub Path
+{
+    my $class = shift;
+    my %args = (fullpath => undef,
+                @_);
+
+    if (($args{fullpath}) && ($args{fullpath}=~/\//)) {
+        $args{fullpath} =~ s/\/[^\/]*$//;
+        return $args{fullpath};
+    }
+    return "";
+}
+
 #######
 ##
 ##  File IO

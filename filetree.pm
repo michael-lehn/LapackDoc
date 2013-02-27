@@ -1,5 +1,6 @@
 package Filetree;
 use strict;
+use File::Spec;
 
 sub new
 {
@@ -88,13 +89,11 @@ sub _fileTree
 sub html
 {
     my $self = shift;
-    my %args = (html => undef,
-                @_);
 
-    die unless $args{html};
-
+    my @html;
     $self->FileTreeHtmlDump(fileTree => $self->{fileTree},
-                            html     => $args{html});
+                            html     => \@html);
+    return \@html;
 }
 
 sub FileTreeHtmlDump
@@ -102,17 +101,15 @@ sub FileTreeHtmlDump
     my $class = shift;
     my %args = (fileTree => undef,
                 html     => undef,
-                path     => undef,
+                path     => ".",
                 @_);
 
     my @items = sort keys %{$args{fileTree}};
     return if scalar(@items)==0;
 
-    my $docEnv = $args{html}->{docEnv};
     my $css = "class=\"filetree\"";
 
-    $args{html}->addLine(line => "<ul $css>");
-    $args{html}->incrementIndentLevel();
+    push(@{$args{html}}, "<ul $css>");
 
     foreach my $item (@items) {
         if (${$args{fileTree}}{$item} =~ /^files/) {
@@ -120,20 +117,19 @@ sub FileTreeHtmlDump
             my $file = $1;
             my @ext  = split(",", $2);
 
-            my $mark = DocUtils->CreateFullpath(path      => $args{path},
-                                                filename  => $file);
+            my $mark = File::Spec->catfile($args{path}, $file);
             $mark = "<a name=\"$mark\"></a>";
 
             my @links;
             my $listItem = $file;
             foreach my $ext (sort @ext) {
-                my $docId = DocUtils->CreateFullpath(path      => $args{path},
-                                                     basename  => $file,
-                                                     extension => $ext);
-                $docId = "file:" . $docId;
+                #my $docId = DocUtils->CreateFullpath(path      => $args{path},
+                #                                     basename  => $file,
+                #                                     extension => $ext);
+                #$docId = "file:" . $docId;
 
-                my $link = Html->MakeLink(fromDocEnv => $docEnv,
-                                          toDocEnv => $docId);
+                my $link = "#1"; # Html->MakeLink(fromDocEnv => $docEnv,
+                                #          toDocEnv => $docId);
                 if ($ext eq "doc") {
                     $listItem = "<a href=\"$link\">$file</a>";
                     next;
@@ -145,39 +141,37 @@ sub FileTreeHtmlDump
             if (scalar(@links)>0) {
                 $listItem = $listItem . " [ " . join (", ", @links) . " ]";
             }
-            $args{html}->addLine(line => "<li $css>$mark$listItem</li>");
+            push(@{$args{html}}, "<li $css>$mark$listItem</li>");
         }
     }
     foreach my $item (@items) {
         unless (${$args{fileTree}}{$item} =~ /^files/) {
-            my $currentPath = DocUtils->CreateFullpath(prefix => $args{path},
-                                                       path   => $item);
+            my $currentPath = File::Spec->catfile($args{path}, $item);
             my $mark = "<a name=\"$currentPath\"></a>";
             my $subTree = ${$args{fileTree}}{$item};
             my $css = "class=\"filetree\"";
 
             if (scalar(keys %{$subTree})!=0) {
                 my $parent = DocUtils->ParentDirectory(path => $currentPath);
-                my $link = Html->MakeLink(fromDocEnv => $docEnv,
-                                          toDocEnv => "dir:$parent/");
+                my $link = "#2"; #Html->MakeLink(fromDocEnv => $docEnv,
+                                #          toDocEnv => "dir:$parent/");
                 $link = "<a href=\"$link\">$item</a>";
 
-                $args{html}->addLine(line => "<li $css>$mark$link");
+                push(@{$args{html}}, "<li $css>$mark$link");
                 $class->FileTreeHtmlDump(fileTree => $subTree,
                                          html     => $args{html},
                                          path     => $currentPath);
-                $args{html}->addLine(line => "</li>");
+                push(@{$args{html}}, "</li>");
             } else {
-                my $link = Html->MakeLink(fromDocEnv => $docEnv,
-                                          toDocEnv => "dir:$currentPath/");
+                my $link = "#3";  # Html->MakeLink(fromDocEnv => $docEnv,
+                                 #         toDocEnv => "dir:$currentPath/");
                 $link = "<a href=\"$link\">$item/</a>";
-                $args{html}->addLine(line => "<li $css>$mark$link</li>");
+                push(@{$args{html}}, "<li $css>$mark$link</li>");
             }
         }
     }
 
-    $args{html}->decreaseIndentLevel();
-    $args{html}->addLine(line => "</ul>");
+    push(@{$args{html}}, "</ul>");
 }
 
 sub CompressFileList
