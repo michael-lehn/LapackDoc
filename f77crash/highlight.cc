@@ -13,7 +13,7 @@ enum Keyword {
 };
 
 static std::string  tag[_numKeywords];
-static Keyword      keyword[NUM_TOKENS];
+static Keyword      keyword[NUM_TOKENS+1];
 
 void
 initHighlight()

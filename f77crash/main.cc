@@ -1,12 +1,15 @@
 //#define DEBUG
 
 #include <f77crash/crossrefs.h>
-#include <f77crash/fortran.h>
+//#include <f77crash/fortran.h>
 #include <f77crash/lex.h>
 #include <iostream>
 #include <limits>
 #include <climits>
 #include <map>
+
+int
+yyparse();
 
 int
 main(int argc, char **argv)
