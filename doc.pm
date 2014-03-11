@@ -43,15 +43,19 @@ sub Extract
                 @_);
 
     my ($srcfilename, $srcdir) = fileparse($args{sourceFile});
-    $Doc::srcFile = $srcfilename . ".html";
+    $Doc::srcFile = File::Spec->catfile($srcdir, $srcfilename . ".html");
+    $Doc::srcFile = File::Spec->abs2rel($Doc::srcFile);
     $Doc::srcDir  = $srcdir;
     $Doc::subName = undef;
 
-    _crashImport($args{crashFile});
     my $linebuffer = $class->HasDoc(sourceFile => $args{sourceFile});
     unless ($linebuffer) {
         # printf STDERR "$args{sourceFile} does not contain documentation\n";
         return undef;
+    }
+
+    if ($args{crashFile}) {
+        _crashImport($args{crashFile});
     }
 
     my @html;

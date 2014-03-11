@@ -8,13 +8,54 @@ BEGIN {
 
 use strict;
 use DocUtils;
+use Doc;
 use File::Basename;
+use Storable;
+use Data::Dumper;
 
 sub Reset
 {
     my $class = shift;
 
     %Deps::external = ();
+    %Deps::call = ();
+    %Deps::caller = ();
+}
+
+sub SaveArchive
+{
+    my $class = shift;
+    my %args = (file => undef,
+                @_);
+
+    die unless $args{file};
+
+    my $cloneref = Storable::dclone({external => \%Deps::external,
+                                     call     => \%Deps::call,
+                                     caller   => \%Deps::caller});
+    store($cloneref, $args{file});
+}
+
+sub LoadArchive
+{
+    my $class = shift;
+    my %args = (file => undef,
+                @_);
+
+    die unless $args{file};
+
+    my $stored = retrieve($args{file});
+
+    %Deps::external = %{$stored->{external}};
+    %Deps::call     = %{$stored->{call}};
+    %Deps::caller   = %{$stored->{caller}};
+}
+
+sub Display
+{
+    my $class = shift;
+    print Data::Dumper->Dump([\%Deps::external, \%Deps::call, \%Deps::caller],
+                             ["external", "call", "caller"]);
 }
 
 sub Update
@@ -46,29 +87,30 @@ sub Update
 #           $Deps::call{A} = B;   #  A calls B
 #
             unless ($Deps::call{$field[0]}) {
-                $Deps::call{$field[0]} = [];
+                $Deps::call{$field[0]} = {};
             }
-            push(@{$Deps::call{$field[0]}}, $field[2]);
+            $Deps::call{$field[0]}->{$field[2]} = 1;
 
 #
 #           $Deps::caller{A} = B;   # B is caller of A <=> B calls A
 #
             unless ($Deps::caller{$field[2]}) {
-                $Deps::caller{$field[2]} = [];
+                $Deps::caller{$field[2]} = {};
             }
-            push(@{$Deps::caller{$field[2]}}, $field[0]);
+            $Deps::caller{$field[2]}->{$field[0]} = 1;
 
         } else {
 
             unless ($Deps::external{$field[0]}) {
-                $Deps::external{$field[0]} = [];
+                $Deps::external{$field[0]} = {};
             }
 
+            my $key = "$field[1]:$field[2]:$field[3]";
             my $entry= {type => $field[1],
                         file => $field[3],
                         line => $field[2]};
 
-            push(@{$Deps::external{$field[0]}}, $entry);
+            $Deps::external{$field[0]}->{$key} = $entry;
         }
     }
 }
@@ -84,14 +126,16 @@ sub Dump
                 @_);
 
 
-    my $root;
     if ($args{call}) {
 
-        $root = $args{call} . ".call";
         $args{node}->{$args{call}} = 1;
 
-        foreach my $sub (@{$Deps::call{$args{call}}}) {
+        foreach my $sub (keys %{$Deps::call{$args{call}}}) {
             $args{edge}->{"$args{call} -> $sub"} = 1;
+
+            if ($args{node}->{$sub}) {
+                next;
+            }
 
             $class->Dump(call  => $sub,
                          frame => undef,
@@ -101,12 +145,15 @@ sub Dump
 
     } elsif ($args{caller}) {
 
-        $root = $args{caller} . ".caller";
         $args{node}->{$args{caller}} = 1;
 
-        foreach my $sub (@{$Deps::caller{$args{caller}}}) {
+        foreach my $sub (keys %{$Deps::caller{$args{caller}}}) {
             my $key = "$sub -> $args{caller}";
             $args{edge}->{$key} = 1;
+
+            if ($args{node}->{$sub}) {
+                next;
+            }
 
             $class->Dump(caller => $sub,
                          frame  => undef,
@@ -132,7 +179,19 @@ sub Dump
         }
         foreach my $p (keys %{$args{node}}) {
             if ($Deps::external{$p}) {
-                my $file = $Deps::external{$p}->[0]->{file};
+
+                my @entry = values(%{$Deps::external{$p}});
+
+                if ($#entry>0) {
+                    print STDERR "[WARNING] Multiple entries for '$p':";
+                    foreach my $entry (@entry) {
+                        print STDERR ">    $entry\n";
+                    }
+                }
+
+                my $entry = $entry[0];
+
+                my $file = $entry->{file};
                 my $doc = Doc->HasDoc(sourceFile => $file);
 
                 if ($doc) {
@@ -140,7 +199,7 @@ sub Dump
                     $file .= ".html";
                 } else {
                     $file .= ".html";
-                    $file .= "#" . $Deps::external{$p}->[0]->{line};
+                    $file .= "#" . $entry->{line};
                 }
 
                 my $url = $file;
@@ -151,15 +210,7 @@ sub Dump
         }
         push(@linebuffer, "}");
 
-        my $dotFile  = File::Spec->catfile($Config::graphsDir, "${root}.dot");
-        my $svgFile  = File::Spec->catfile($Config::graphsDir, "${root}.svg");
-
-        if ($#linebuffer<1000) {
-            DocUtils->SaveLinebuffer(file     => $dotFile,
-                                     linesRef => \@linebuffer);
-            system("dot -Tsvg -o $svgFile $dotFile");
-        }
-
+        return \@linebuffer;
     }
 
 }

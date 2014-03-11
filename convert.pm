@@ -3,6 +3,8 @@ package Convert;
 BEGIN {
 
     our $sourcefile;
+    our $lino_prefix = "";
+    our $src_dir_prefix = "";
 
 }
 
@@ -14,12 +16,14 @@ use File::Basename;
 sub Fortran
 {
     my $class = shift;
-    my %args = (sourcefile  => undef,
-                crashfile   => undef,
-                linenumbers => 1,
+    my %args = (sourcefile     => undef,
+                crashfile      => undef,
+                linenumbers    => undef,
+                src_dir_prefix => undef,
                 @_);
-
-    $Convert::sourcefile = $args{sourcefile};
+    $Convert::sourcefile     = $args{sourcefile};
+    $Convert::lino_prefix    = $args{sourcefile} . "_line";
+    $Convert::src_dir_prefix = $args{src_dir_prefix};
 
     my @linebuffer = @{DocUtils->LoadLinebuffer(file => $args{sourcefile})};
     my @html;
@@ -68,6 +72,8 @@ sub Fortran
                          "<span class=\"code_content\">\n";
     my $endMonospace   = "</span></div><!--code_content-->\n";
 
+    _enumerateLines(\@html);
+
     if ($args{linenumbers}) {
         @html = ("<table class=\"$css\"><tr><td class=\"code_linenumbers\">\n",
                  $startMonospace,
@@ -78,9 +84,11 @@ sub Fortran
                  @html,
                  $endMonospace,
                  "</td></tr></table>\n");
-    }
-
-    push(@html, "<br>" x 100);
+    } else {
+        @html = ($startMonospace,
+                 @html,
+                 $endMonospace);
+     }
 
     return \@html;
 }
@@ -116,26 +124,46 @@ sub _string
 
 sub _highlight
 {
-    my $str   = _string(shift);
-    my $entry = shift;
+    my $str            = _string(shift);
+    my $entry          = shift;
+
+    my $lino = $Convert::lino_prefix;
+    my $hasDoc = Doc->HasDoc(sourceFile => $Convert::sourcefile);
+
+
 
     if ($entry->{type} eq "VARIABLE") {
-        return "<a class=\"$entry->{type}\" href=\"#$entry->{tag}\">$str</a>";
+        return "<a class=\"$entry->{type}\" ".
+               "href=\"#${lino}$entry->{tag}\">$str</a>";
     }
 
     if ($entry->{type} eq "ARGDEF") {
         my ($srcfile, $srcdir) = fileparse($Convert::sourcefile);
-        $srcfile = basename($srcfile, ".f") . ".html";
 
-        my $href = $srcfile . "#" . lc($entry->{content});
+        unless ($hasDoc) {
+            return "<span class=\"$entry->{type}\">$str</span>";
+        }
+
+        my $href = basename($srcfile, ".f") . ".html";
+        $href = File::Spec->catfile($srcdir, $href);
+        $href = File::Spec->abs2rel($href);
+        $href = $href . "#" . lc($entry->{content});
+
         return "<a class=\"$entry->{type}\" href=\"$href\">$str</a>";
     }
 
     if ($entry->{type} eq "SUBROUTINE" || $entry->{type} eq "FUNCTION") {
         my ($srcfile, $srcdir) = fileparse($Convert::sourcefile);
-        $srcfile = basename($srcfile, ".f") . ".html";
 
-        return "<a class=\"$entry->{type}\" href=\"$srcfile\">$str</a>";
+        unless ($hasDoc) {
+            return "<span class=\"$entry->{type}\">$str</span>";
+        }
+
+        my $href = basename($srcfile, ".f") . ".html";
+        $href = File::Spec->catfile($srcdir, $href);
+        $href = File::Spec->abs2rel($href);
+
+        return "<a class=\"$entry->{type}\" href=\"$href\">$str</a>";
     }
 
 
@@ -148,13 +176,14 @@ sub _highlight
                           "function/subroutine $str (tag=$entry->{tag})\n";
             return "<span class=\"EXTERNAL_TIP\">$str</span>";
         }
-        my @defs = @{$Deps::external{$entry->{tag}}};
+        my @defs = values %{$Deps::external{$entry->{tag}}};
 
         if ($#defs==0) {
 
             my $href = $defs[0]->{file};
-            $href = File::Spec->abs2rel($href, $srcdir);
+            $href = File::Spec->abs2rel($href);
             $href = $href . ".html#" . $defs[0]->{line};
+
             return "<a class=\"$entry->{type}\" href=\"$href\">$str</a>";
 
         } elsif ($#defs>0) {
@@ -206,7 +235,8 @@ sub _highlight
             $text .= "</table>";
             _replace($text, '"', "\\'");
             _replace($tip, "#TEXT#", $text);
-            return "<span $tip class=\"EXTERNAL_TIP codelink_listitem\">$str</span>";
+            return "<span $tip class=\"EXTERNAL_TIP codelink_listitem\">" .
+                   $str . "</span>";
         }
     }
 
@@ -269,6 +299,17 @@ sub _crashImport
     return %crash;
 }
 
+sub _enumerateLines
+{
+    my $lines = shift;
+    my $lino  = $Convert::lino_prefix;
+
+    for (my $i=0; $i<=$#{$lines}; ++$i) {
+        my $number = $i+1;
+        $lines->[$i] = "<a name=\"${lino}${number}\"></a>" . $lines->[$i];
+    }
+}
+
 sub _makeLineNumbers
 {
     my $total = shift;
@@ -283,8 +324,7 @@ sub _makeLineNumbers
         my $replace = "&nbsp;" x length($1);
         $str =~ s/^0*/$replace/;
 
-        $str = "<a name=\"$number\"></a>" .
-               "<span class=\"docrefcomment\">" .
+        $str = "<span class=\"docrefcomment\">" .
                "&nbsp;"x5 .
                "</span>" .
                "<!-- LineNumber " . sprintf("%5d", $number) . " -->" .

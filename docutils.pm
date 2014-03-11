@@ -89,6 +89,7 @@ sub FindFiles
     my $class = shift;
     my %args = (path => undef,
                 pattern => undef,
+                subdirs => 1,
                 @_);
 
     my $dh = DirHandle->new($args{path})
@@ -106,10 +107,11 @@ sub FindFiles
 
         my $subdir = File::Spec->catdir($args{path}, $file);
 
-        if (-d $subdir) {
+        if ($args{subdirs} && -d $subdir) {
             my $relsubdir = $file;
             foreach my $file ($class->FindFiles(path => $subdir,
-                                                pattern => $args{pattern}))
+                                                pattern => $args{pattern},
+                                                subdirs => 1))
             {
                 push(@filelist, File::Spec->catdir($relsubdir, $file));
             }
