@@ -1,0 +1,73 @@
+#! /usr/bin/perl -w
+use strict;
+
+BEGIN {
+    unless ($ENV{LAPACKDOC}) {
+        print STDERR "[WARNING] Environment variable LAPACKDOC not set.\n";
+        print STDERR "[WARNING] I will try:\n";
+        print STDERR "[WARNING]     export LAPACKDOC=\$PWD\n";
+        $ENV{LAPACKDOC} = $ENV{PWD};
+    }
+
+    unshift(@INC, "$ENV{LAPACKDOC}");
+}
+
+use Convert;
+
+my %option = (sourcefile     => undef,  # 1. required argument
+              crashfile      => undef,  # 2. required argument
+              deparch        => undef,
+              header         => undef,
+              src_dir_prefix => undef,
+              linenumbers    => undef,
+              footer         => undef);
+
+for (my $i=0; $i<=$#ARGV; ++$i) {
+    if ($ARGV[$i] =~ /^--deps-archive=(.*)/) {
+        $option{deparch} = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--header=(.*)/) {
+        $option{header} = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--footer=(.*)/) {
+        $option{footer} = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--linenumbers/) {
+        $option{linenumbers} = 1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--src-dir-prefix=(.*)/) {
+        $option{src_dir_prefix} = $1;
+        next;
+    }
+    unless ($option{crashfile}) {
+        $option{crashfile} = $ARGV[$i];
+        next;
+    }
+    unless ($option{sourcefile}) {
+        $option{sourcefile} = $ARGV[$i];
+        next;
+    }
+}
+
+unless ($option{sourcefile} && $option{crashfile}) {
+    die "usage: $0 [--dep-archive=archive --header=headerfile " .
+                "--src-dir-prefix=dir " .
+                "--footer=footerfile --linenumbers] crashfile sourcefile\n\n";
+}
+
+if ($option{deparch}) {
+    Deps->LoadArchive(file => $option{deparch});
+}
+
+my $linebuffer = Convert->Fortran(sourcefile  => $option{sourcefile},
+                                  crashfile   => $option{crashfile},
+                                  linenumbers => $option{linenumbers},
+                                  src_dir_prefix => $option{src_dir_prefix});
+
+print @{$linebuffer};
+
+

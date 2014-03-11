@@ -1,0 +1,334 @@
+=========
+LapackDoc                                                               [TOC]
+=========
+
+The intension of this project is a robust, maintainable, standalone and
+simple-to-use documentation tool for __LAPACK__.  However, some of the core
+ingredients like the Fortran 77 lexer and parser `f77crash` might also be
+valuable for other documentation tools (e.g. doxygen).  Technically `f77crash`
+is based on Netlib's __f2c__.
+
+
+
+Fortran Lexer and Parser: f77crash
+==================================
+
+`f77crash` is short for "*F*ortran *77* *cr*oss referencing *a*nd *s*yntax
+*h*ighlighting".  The tool lexes and parses a Fortran source code.  Hereby it
+extracts code locations of types, variables, statements, constants and so on.
+
+
+Simple Code
+-----------
+For demonstrating the functionality of `f77crash` consider this small and simple
+code snippet
+
+:import: examples/simple.f
+
+
+
+Running `f77crash` on this Fortran code results in
+
+  *--[SHELL]----------------------------------------------------*
+  |                                                             |
+  |  f77crash/f77crash examples/simple.f                        |
+  |                                                             |
+  *-------------------------------------------------------------*
+
+Code locations are presented in the format `line.column:line.column`.  Counting
+start at zero.  So e.g. `STATEMENT,0.6:0.7,0,33,do` the statement `do` starts in
+row `0` (first row), column `6` and ends in row `0`, column `7`.
+
+
+Cool Example (VIM Syntax Highlighting Fails)
+--------------------------------------------
+For demonstrating the power of `f77crash` we next consider a more complicated
+example.  At a first glance the code looks obscure and illegal.  But it actually
+is correct Fortran code as spaces are ignored.
+
+:import: examples/obscure.f
+
+Here the syntax highlighting of most text editor (in this case VIM) produces
+wrong results.  For example `DO 10 I = 1.20` inside the loop is an assignment
+with left hand side variable `DO10I` and right hand side value `1.20`.
+
+The `f77crash` lexer and parser correctly detects all the tricky stuff:
+
+  *--[SHELL]----------------------------------------------------*
+  |                                                             |
+  |  f77crash/f77crash examples/obscure.f                       |
+  |                                                             |
+  *-------------------------------------------------------------*
+
+
+Syntax Highlighted and Cross Referenced Fortran Code: f2html
+============================================================
+The output of `f77crash` can be used to create syntax highlighted and cross
+referenced listings.  The `f2html` tool is a simple Perl script for this
+purpose.
+
+First we store the output of `f77crash` in a file `obscure.crash`.  Then we use
+`f2html` for producing a highlighted listing in HTML.
+
+  *--[SHELL]---------------------------------------------------------*
+  |                                                                  |
+  |  f77crash/f77crash examples/obscure.f > obscure.crash            |
+  |  ./f2html obscure.crash examples/obscure.f  > obscure.html       |
+  |                                                                  |
+  *------------------------------------------------------------------*
+
+This results in the following HTML code:
+
+:import: obscure.html [plain]
+
+Note that the variables are cross referenced (indicated by the dotted
+underlining).  Clicking the variable names lets you jump to its definition.
+
+
+Cross Referencing External Subroutines
+======================================
+
+Having large projects (e.g. __LAPACK__) a user is very grateful for diagrams
+displaying dependencies.  This includes *caller trees* (what functions/routines
+get called) and *call trees* (who calls a given function/routine).  Furthermore
+in listings *calls to external functions* or subroutines can be cross
+referenced.  That means clicking the functions name let's you jump to the
+external definition.
+
+
+Setting up an Example
+---------------------
+
+`f77crash` outputs all information relevant for external dependencies on
+`STDERR`.  This includes calls to external routines as well as definitions
+of subroutines and programs.  We store the result in a `*.deps` file.
+
+For illustration the concept we setup a bunch of Fortran routines that partially
+call each other.  For each of them we create a `*.crash` and `*.deps` file.
+And we focus on the information contained in the `*.deps` files.
+
+Program MYCALLER
+~~~~~~~~~~~~~~~~
+The main program simply calls an external routine `MYSUPR`.
+
+:import: examples/mycaller.f
+
+We now store the output on `STDOUT` and `STDERR` in separate files.
+
+  *--[SHELL]---------------------------------------------------------*
+  |                                                                  |
+  |  f77crash/f77crash examples/mycaller.f > mycaller.crash      +++ |
+  |                                       2> mycaller.deps           |
+  |  cat mycaller.crash                                              |
+  |  cat mycaller.deps                                               |
+  |                                                                  |
+  *------------------------------------------------------------------*
+
+From the content of `mycaller.deps` you see that `mycaller.f` defines a program
+and calls `mysubr`.
+
+
+Subroutine MYSUBR
+~~~~~~~~~~~~~~~~~
+Depending on some condition `MYSUPR` either calls `FOO`or `DUMMY`
+
+:import: examples/mysubr.f
+
+So relevant for the dependencies is:
+
+  *--[SHELL]---------------------------------------------------------*
+  |                                                                  |
+  |  f77crash/f77crash examples/mysubr.f > mysubr.crash          +++ |
+  |                                     2> mysubr.deps               |
+  |  cat mysubr.deps                                                 |
+  |                                                                  |
+  *------------------------------------------------------------------*
+
+From the content of `mysubr.deps` you see that `mysubr.f` defines the subroutine
+`mysubr` and calls `foo` and `dummy`.
+
+
+Subroutine FOO
+~~~~~~~~~~~~~~
+`FOO` in turn calls `MYSUBR`
+
+:import: examples/foo.f
+
+So relevant for the dependencies is:
+
+  *--[SHELL]---------------------------------------------------------*
+  |                                                                  |
+  |  f77crash/f77crash examples/foo.f > foo.crash                +++ |
+  |                                     2> foo.deps                  |
+  |  cat foo.deps                                                    |
+  |                                                                  |
+  *------------------------------------------------------------------*
+
+From the content of `foo.deps` you see that `foo.f` defines the subroutine
+`foo` and calls `mysubr`.
+
+
+Subroutine DUMMY
+~~~~~~~~~~~~~~~~
+Now `DUMMY` is lazy and doing exactly nothing.
+
+:import: examples/dummy.f
+
+So relevant for the dependencies is:
+
+  *--[SHELL]---------------------------------------------------------*
+  |                                                                  |
+  |  f77crash/f77crash examples/dummy.f > dummy.crash            +++ |
+  |                                     2> dummy.deps                |
+  |  cat dummy.deps                                                  |
+  |                                                                  |
+  *------------------------------------------------------------------*
+
+From the content of `dummy.deps` you see that `dummy.f` defines the subroutine
+`dummy`.
+
+
+Create an Dependency Archive
+----------------------------
+
+We now have for all our source files a corresponding `*.deps` file.  Next we
+accumulate them in a single archive.  From this archive we later can create
+call and caller graphs for individual routines.
+
+The archive gets created with the `deparch` tool.
+
+  *--[SHELL]---------------------------------------------------------*
+  |                                                                  |
+  |  ./deparch --create-archive=my.deparch --deps-path=.             |
+  |                                                                  |
+  *------------------------------------------------------------------*
+
+The created archive is called `my.deparch` and contains all the `*.deps` files
+found in the current directory (i.e. `.`).
+
+
+Create a Call Graph
+-------------------
+
+The `deparch` tool can also be used to extract call and caller graphs.  The
+output is in a format that can be used as input for `dot` (from __Graphviz__).
+
+Let us create a call tree for `MYSUBR`.  We create a `dot` source file with
+
+  *--[SHELL]---------------------------------------------------------*
+  |                                                                  |
+  |  ./deparch --import-archive=my.deparch --extract-call=mysubr  +++|
+  |            > mysubr.call                                         |
+  |  cat mysubr.call                                                 |
+  |                                                                  |
+  *------------------------------------------------------------------*
+
+Then we create a __svg__ (Scalable Vector Graphics) file.
+
+  *--[SHELL]---------------------------------------------------------*
+  |                                                                  |
+  |  dot -Tsvg -o mysubr.call.svg mysubr.call                        |
+  |                                                                  |
+  *------------------------------------------------------------------*
+
+Which looks like that
+
+:import: mysubr.call.svg  [plain]
+
+Note that the nodes are also linked with the corresponding source files.
+
+
+Create a Caller Graph
+---------------------
+
+In an analogous way we can create a caller graph:
+
+  *--[SHELL]-------------------------------------------------------------*
+  |                                                                      |
+  |  ./deparch --import-archive=my.deparch --extract-caller=mysubr    +++|
+  |            > mysubr.caller                                           |
+  |  dot -Tsvg -o mysubr.caller.svg mysubr.caller                        |
+  |                                                                      |
+  *----------------------------------------------------------------------*
+
+Resulting in
+
+:import: mysubr.caller.svg  [plain]
+
+
+Cross References in Listings to External Routines
+-------------------------------------------------
+
+By default cross references to external functions and subroutines are not
+created by `f2html`.  For the `mysubr.f` example a warning gets issued:
+
+  *--[SHELL]-------------------------------------------------------------*
+  |                                                                      |
+  |  ./f2html mysubr.crash examples/mysubr.f > mysubr.html               |
+  |                                                                      |
+  *----------------------------------------------------------------------*
+
+In order to avoid this we also have to pass the dependency archive:
+
+  *--[SHELL]-------------------------------------------------------------*
+  |                                                                      |
+  |  ./f2html mysubr.crash --deps-archive=my.deparch                  +++|
+  |                        examples/mysubr.f > mysubr.html               |
+  |                                                                      |
+  *----------------------------------------------------------------------*
+
+This gives
+
+:import: mysubr.html [plain]
+
+Note that links to external functions/subroutines are solid underlined.
+
+
+Extracting Embedded Documentation
+=================================
+
+In most __LAPACK__ source files the documentation of the code is embedded.  The
+documentation typically consists of several sections.  Usual at least the
+ following two:
+
+ - *Purpose*  describes the mathematical purpose and background.
+ - *Arguments*  describes the types of arguments, whether they are input or
+   output arguments and in particular their meaning.
+
+Sometimes additional sections go more into detail on the mathematical
+background.  With the `LapackDoc` tools this documentation can be extracted and
+presented in a nice HTML format.
+
+Let's look at the source code of typical __LAPACK__ function which we use for
+demonstration:
+
+:import: examples/dgetrf.f
+
+First we extract with `f77crash` all the information related to Fortran syntax
+and dependencies.  That is necessary to determine in the *Arguments* section the
+referenced variable names.
+
+  *--[SHELL]-------------------------------------------------------------*
+  |                                                                      |
+  |  f77crash/f77crash examples/dgetrf.f > dgetrf.crash 2>dgetrf.deps    |
+  |                                                                      |
+  *----------------------------------------------------------------------*
+
+Then we extract the embedded documentation and create a HTML document.
+
+  *--[SHELL]-------------------------------------------------------------*
+  |                                                                      |
+  |  ./xtractdoc --crashfile=dgetrf.crash examples/dgetrf.f           +++|
+  |              > dgetrf.html                                           |
+  |                                                                      |
+  *----------------------------------------------------------------------*
+
+Note that the variable names in the *Arguments* section are linked to the point
+of definition in the source code:
+
+:import: dgetrf.html [plain,class=framed,title=no]
+
+:links: LAPACK    ->  http://www.netlib.org/lapack/
+        f2c       ->  http://www.netlib.org/f2c/
+        Graphviz  ->  http://www.graphviz.org
+        svg       ->  http://de.wikipedia.org/wiki/Scalable_Vector_Graphics

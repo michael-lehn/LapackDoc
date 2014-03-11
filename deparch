@@ -1,0 +1,114 @@
+#! /usr/bin/perl -w
+use strict;
+
+BEGIN {
+    unless ($ENV{LAPACKDOC}) {
+        print STDERR "[WARNING] Environment variable LAPACKDOC not set.\n";
+        print STDERR "[WARNING] I will try:\n";
+        print STDERR "[WARNING]     export LAPACKDOC=\$PWD\n";
+        $ENV{LAPACKDOC} = $ENV{PWD};
+    }
+
+    unshift(@INC, "$ENV{LAPACKDOC}");
+}
+
+use Convert;
+
+my %option = (search_recursively => 1,
+              deps_suffix        => "deps");
+
+my $archFile;
+
+for (my $i=0; $i<=$#ARGV; ++$i) {
+    if ($ARGV[$i] =~ /^--deps-file=(.*)/) {
+        $option{deps_file} = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--deps-path=(.*)/) {
+        $option{deps_path} = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--search-recursively/) {
+        $option{search_recursively} = 1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--deps-suffix=(.*)/) {
+        $option{deps_suffix} = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--extract-call=(.*)/) {
+        $option{call} = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--extract-caller=(.*)/) {
+        $option{caller} = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--create-archive=(.*)/) {
+        $option{create_archive} = 1;
+        $archFile = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--update-archive=(.*)/) {
+        $option{update_archive} = 1;
+        $archFile = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--import-archive=(.*)/) {
+        $option{import_archive} = 1;
+        $archFile = $1;
+        next;
+    }
+    die "unkown option\n";
+}
+
+if ($option{import_archive}) {
+
+    Deps->LoadArchive(file => $archFile);
+
+    my $linebuffer;
+
+    if ($option{caller}) {
+        $linebuffer = Deps->Dump(caller => lc($option{caller}));
+    } elsif ($option{call}) {
+        $linebuffer = Deps->Dump(call => lc($option{call}));
+    }
+
+    foreach my $line (@{$linebuffer}) {
+        print "$line\n";
+    }
+
+} elsif ($option{create_archive} || $option{update_archive}) {
+
+    if ($option{update_archive}) {
+        Deps->LoadArchive(file => $archFile);
+    }
+
+    my @deps;
+
+    if ($option{deps_path}) {
+        my $pattern = "deps";
+        if ($option{deps_suffix}) {
+            $pattern = $option{deps_suffix};
+        }
+        $pattern = ".*" . $pattern . "\$";
+        @deps = DocUtils->FindFiles(path    => $option{deps_path},
+                                    pattern => $pattern,
+                                    subdir  => $option{search_recursively});
+
+    } else {
+        @deps = ($option{deps_file});
+    }
+
+    foreach my $deps (@deps) {
+        Deps->Update(depsFile => $deps);
+    }
+
+
+
+    Deps->SaveArchive(file => $archFile);
+    #Deps->Display();
+}
+
+
+

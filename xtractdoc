@@ -1,0 +1,51 @@
+#! /usr/bin/perl -w
+use strict;
+
+BEGIN {
+    unless ($ENV{LAPACKDOC}) {
+        print STDERR "[WARNING] Environment variable LAPACKDOC not set.\n";
+        print STDERR "[WARNING] I will try:\n";
+        print STDERR "[WARNING]     export LAPACKDOC=\$PWD\n";
+        $ENV{LAPACKDOC} = $ENV{PWD};
+    }
+
+    unshift(@INC, "$ENV{LAPACKDOC}");
+}
+
+use Doc;
+
+my %option = (sourcefile     => undef,  # 1. required argument
+              crashfile      => undef,
+              deparch        => undef,
+              graphs         => undef,
+             );
+
+for (my $i=0; $i<=$#ARGV; ++$i) {
+    if ($ARGV[$i] =~ /^--crashfile=(.*)/) {
+        $option{crashfile} = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--deps-archive=(.*)/) {
+        $option{deparch} = $1;
+        next;
+    }
+    if ($ARGV[$i] =~ /^--add-graphs/) {
+        $option{graphs} = 1;
+        next;
+    }
+    unless ($option{sourcefile}) {
+        $option{sourcefile} = $ARGV[$i];
+        next;
+    }
+}
+
+my $linebuffer = Doc->Extract(sourceFile => $option{sourcefile},
+                              crashFile  => $option{crashfile});
+
+if ($option{graphs}) {
+    Doc->AddGraphs(htmlRef => $linebuffer);
+}
+
+for my $line (@{$linebuffer}) {
+    print "$line\n";
+}

@@ -1,0 +1,7 @@
+      PROGRAM MYCALLER
+
+      EXTERNAL MYSUBR
+
+      CALL MYSUBR(3)
+
+      END

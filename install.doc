@@ -1,0 +1,25 @@
+=======
+Install
+=======
+
+You can get LapackDoc from __github__.  After cloning the repository compile
+its `f77crash` tools and adjust your `PATH` environment variable:
+
+  *--[SHELL(hide)]----------------------------------------------*
+  |                                                             |
+  |  rm -rf /tmp/LapackDoc                                      |
+  |                                                             |
+  *-------------------------------------------------------------*
+
+  *--[SHELL]----------------------------------------------------*
+  |                                                             |
+  |  cd /tmp                                                    |
+  |  git clone https://github.com/michael-lehn/LapackDoc.git    |
+  |  cd LapackDoc                                               |
+  |  cd f77crash                                                |
+  |  make                                                       |
+  |  export PATH=$PATH:$PWD                                     |
+  |                                                             |
+  *-------------------------------------------------------------*
+
+:links: github  ->   https://github.com/michael-lehn/LapackDoc
