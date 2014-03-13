@@ -396,7 +396,11 @@ sub _addSection
         $Doc::inArgsSection = 1;
     }
 
-    push(@{$args{htmlRef}}, "<h2 class=\"SECTION\">$args{name}</h1>");
+    my $section = $args{name};
+    $section =~ s/\s/_/g;
+
+    push(@{$args{htmlRef}}, "<a name=\"section_$section\"></a>");
+    push(@{$args{htmlRef}}, "<h2 class=\"SECTION\">$args{name}</h2>");
 }
 
 sub _openParagraph

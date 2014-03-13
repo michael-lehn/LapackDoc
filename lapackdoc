@@ -182,7 +182,7 @@ foreach my $source (@source) {
                    callerDump => $callerDump);
 
     my $htmlVars = {
-        "TITLE"         => $srcfilename,
+        "TITLE"         => File::Spec->catfile($srcdir, $srcfilename),
         "DEFAULT_CSS"   => File::Spec->catfile(
                                          File::Spec->abs2rel("", $srcdir),
                                          $Config::css),

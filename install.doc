@@ -7,13 +7,14 @@ its `f77crash` tools and adjust your `PATH` environment variable:
 
   *--[SHELL(hide)]----------------------------------------------*
   |                                                             |
-  |  rm -rf /tmp/LapackDoc                                      |
+  |  rm -rf /tmp/demo/LapackDoc                                 |
+  |  mkdir -p /tmp/demo                                         |
   |                                                             |
   *-------------------------------------------------------------*
 
   *--[SHELL]----------------------------------------------------*
   |                                                             |
-  |  cd /tmp                                                    |
+  |  cd /tmp/demo                                               |
   |  git clone https://github.com/michael-lehn/LapackDoc.git    |
   |  cd LapackDoc                                               |
   |  cd f77crash                                                |
