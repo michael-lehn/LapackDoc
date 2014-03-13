@@ -18,7 +18,9 @@ its `f77crash` tools and adjust your `PATH` environment variable:
   |  cd LapackDoc                                               |
   |  cd f77crash                                                |
   |  make                                                       |
+  |  cd ..                                                      |
   |  export PATH=$PATH:$PWD                                     |
+  |  export LAPACKDOC=$PWD                                      |
   |                                                             |
   *-------------------------------------------------------------*
 

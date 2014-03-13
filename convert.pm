@@ -39,15 +39,15 @@ sub Fortran
 
     my %crash = _crashImport($args{crashfile});
 
-    my $step = 0;
+#    my $step = 0;
 
     for (my $line=0; $line<=$#linebuffer; ++$line) {
         my $str = $linebuffer[$line];
 
-        if ($line > $step * $#linebuffer / 50) {
-            printf STDERR ".";
-            ++$step;
-        }
+#        if ($line > $step * $#linebuffer / 50) {
+#            printf STDERR ".";
+#            ++$step;
+#        }
 
         my $tpos = index($str, "\t");
         if ($tpos>=0 && $tpos<6) {
@@ -81,7 +81,7 @@ sub Fortran
 
         push(@html, "$str<br>");
     }
-    printf STDERR "\n";
+#    printf STDERR "\n";
 
 
     my $css = ($args{linenumbers}) ? " code_with_linenumbers" : "";

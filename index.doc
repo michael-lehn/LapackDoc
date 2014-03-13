@@ -8,6 +8,9 @@ ingredients like the Fortran 77 lexer and parser `f77crash` might also be
 valuable for other documentation tools (e.g. doxygen).  Technically `f77crash`
 is based on Netlib's __f2c__.
 
+All the tool we explain and introduce here are the ingredients of __lapackdoc__.
+The __lapackdoc__ command line tool can be used for creating a full
+documentation of __LAPACK__ `3.3.1` as shown in this __demo__.
 
 
 Fortran Lexer and Parser: f77crash
@@ -328,7 +331,10 @@ of definition in the source code:
 
 :import: dgetrf.html [plain,class=framed,title=no]
 
+
 :links: LAPACK    ->  http://www.netlib.org/lapack/
+        demo      ->  doc:lapackdemo
+        lapackdoc ->  doc:lapackdemo
         f2c       ->  http://www.netlib.org/f2c/
         Graphviz  ->  http://www.graphviz.org
         svg       ->  http://de.wikipedia.org/wiki/Scalable_Vector_Graphics
