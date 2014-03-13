@@ -9,6 +9,7 @@ BEGIN {
 use strict;
 use DocUtils;
 use Doc;
+use Cwd;
 use File::Basename;
 use Storable;
 use Data::Dumper;
@@ -120,6 +121,7 @@ sub Dump
     my $class = shift;
     my %args = (call     => undef,
                 caller   => undef,
+                cwd      => cwd(),
                 frame    => 1,
                 edge     => {},
                 node     => {},
@@ -183,10 +185,12 @@ sub Dump
                 my @entry = values(%{$Deps::external{$p}});
 
                 if ($#entry>0) {
-                    print STDERR "[WARNING] Multiple entries for '$p':";
-                    foreach my $entry (@entry) {
-                        print STDERR ">    $entry\n";
-                    }
+                    # print STDERR "[WARNING] Multiple entries for '$p':";
+                    # foreach my $entry (@entry) {
+                    #     print STDERR ">    $entry\n";
+                    #     print STDERR Dumper($entry);
+                    #     print STDERR ">----------\n";
+                    # }
                 }
 
                 my $entry = $entry[0];
@@ -203,7 +207,7 @@ sub Dump
                 }
 
                 my $url = $file;
-                $url = File::Spec->abs2rel($url, $Config::graphsSubdir);
+                $url = File::Spec->abs2rel($url, $args{cwd});
 
                 push(@linebuffer, "    $p [URL=\"$url\" target=\"_top\"];");
             }

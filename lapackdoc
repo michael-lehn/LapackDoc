@@ -2,6 +2,11 @@
 use strict;
 
 BEGIN {
+    unless ($ENV{LAPACKDOC}) {
+        print STDERR "[ERROR] Environment variable LAPACKDOC not set.\n";
+        die;
+    }
+
     unshift(@INC, "$ENV{LAPACKDOC}");
 }
 
@@ -32,6 +37,7 @@ DocUtils->Install(file => File::Spec->catfile($Config::templateDir,
 
 my @source = DocUtils->FindFiles(path => $ENV{PWD}, pattern => '.*\.f$');
 
+printf STDERR "[INFO] Using temporary direcory $Config::tmpDir\n";
 
 #
 #  Create crash-files and deps-files
@@ -42,15 +48,19 @@ foreach my $source (@source) {
     my $crash = File::Spec->catfile($Config::tmpDir, "$source.crash");
     my $deps  = File::Spec->catfile($Config::tmpDir, "$source.deps");
 
+    printf STDERR "Processing '$source':\n";
+
     unless (DocUtils->IsNewerThan(file1 => $source, file2 => $crash)) {
         Deps->Update(depsFile => $deps);
+        printf STDERR "  '$crash'\n";
+        printf STDERR "  '$deps'\n";
+        printf STDERR "  are up-to-date\n";
         next;
     }
 
     DocUtils->Mkdir(file => $crash);
     DocUtils->Mkdir(file => $deps);
 
-    printf STDERR "Processing '$source':\n";
     printf STDERR "  Creating '$crash'\n";
     printf STDERR "   ... and '$deps'\n";
     system("$Config::f77crash $source >$crash 2>$deps");
@@ -60,6 +70,10 @@ foreach my $source (@source) {
     printf STDERR "   ... done.\n";
 }
 
+printf STDERR "\n";
+printf STDERR "-" x 80 . "\n";
+printf STDERR "  Converting sourcefiles\n";
+printf STDERR "-" x 80 . "\n";
 
 #
 #  Convert sourcefiles
@@ -71,15 +85,21 @@ foreach my $source (@source) {
     my $deps      = File::Spec->catfile($Config::tmpDir, "${source}.deps");
     my $htmlFile  = File::Spec->catfile($Config::htmlDir, "${source}.html");
 
+    printf STDERR "Processing '$source':\n";
+
     unless (DocUtils->IsNewerThan(file1 => $crash, file2 => $htmlFile))
     {
+        printf STDERR "  is up-to-date\n";
         next;
     }
 
-    printf STDERR "Creating $htmlFile ...";
+    printf STDERR "  Creating $htmlFile\n  ";
 
-    my $htmlCode = Convert->Fortran(sourcefile => $source,
-                                    crashfile  => $crash);
+    my $htmlCode = Convert->Fortran(sourcefile  => $source,
+                                    crashfile   => $crash,
+                                    cwd         => $srcdir,
+                                    lino_prefix => "",
+                                    linenumbers => 1);
 
     my $htmlVars = {
         "TITLE"         => $source,
@@ -89,7 +109,8 @@ foreach my $source (@source) {
         "WZ_TOOLTIP_JS" => File::Spec->catfile(
                                          File::Spec->abs2rel("", $srcdir),
                                          $Config::tooltip),
-        "FILETREE"      => "",
+        "FILETREE"      => "dir.html#" . File::Spec->catfile($srcdir,
+                                                             $srcfilename)
     };
 
     DocUtils->SaveLinebuffer(file     => $htmlFile,
@@ -107,6 +128,10 @@ foreach my $source (@source) {
     printf STDERR " done.\n";
 }
 
+printf STDERR "\n";
+printf STDERR "-" x 80 . "\n";
+printf STDERR "  Extracting embedded documentation\n";
+printf STDERR "-" x 80 . "\n";
 
 #
 #  Extract embedded documentation
@@ -118,32 +143,43 @@ foreach my $source (@source) {
     my $srcFile  = File::Spec->catfile($Config::htmlDir, "${source}.html");
     my $docFile  = File::Spec->catfile($Config::htmlDir, $srcdir,
                                        "${srcfilename}.html");
+    printf STDERR "Extracting documentation from '$source':\n";
 
     unless (DocUtils->IsNewerThan(file1 => $source, file2 => $docFile)) {
+        printf STDERR "  is up-to-date\n";
         next;
     }
+
 
     DocUtils->Mkdir(file => $docFile);
 
     my $docCode = Doc->Extract(sourceFile => $source,
-                               crashFile  => $crash);
+                               crashFile  => $crash,
+                               cwd        => $srcdir);
 
     unless ($docCode) {
         next;
     }
 
-    printf STDERR "Processing '$srcFile':\n";
     printf STDERR "  Creating '$docFile'\n";
 
     my $sub = lc($srcfilename);
-    printf STDERR "  Creating call graph for '$sub' ...\n";
-    Deps->Dump(call => $sub);
+    printf STDERR "  Creating call graph for '$sub' ... (";
+    my $callDump = Deps->Dump(call => $sub,
+                              cwd  => $srcdir);
+    printf STDERR $#{$callDump} . " lines)\n";
 
-    printf STDERR "  Creating caller graph for '$sub' ...\n";
-    Deps->Dump(caller => $sub);
+
+    printf STDERR "  Creating caller graph for '$sub' ... (";
+    my $callerDump = Deps->Dump(caller => $sub,
+                                cwd    => $srcdir);
+    printf STDERR $#{$callerDump} . " lines)\n";
 
 
-    Doc->AddGraphs(htmlRef => $docCode);
+    Doc->AddGraphs(htmlRef    => $docCode,
+                   path       => $srcdir,
+                   callDump   => $callDump,
+                   callerDump => $callerDump);
 
     my $htmlVars = {
         "TITLE"         => $srcfilename,
@@ -153,7 +189,8 @@ foreach my $source (@source) {
         "WZ_TOOLTIP_JS" => File::Spec->catfile(
                                          File::Spec->abs2rel("", $srcdir),
                                          $Config::tooltip),
-        "FILETREE"      => "",
+        "FILETREE"      => "dir.html#" . File::Spec->catfile($srcdir,
+                                                             $srcfilename)
     };
 
     DocUtils->SaveLinebuffer(file     => $docFile,
@@ -171,33 +208,34 @@ foreach my $source (@source) {
     printf STDERR "   ... done.\n";
 }
 
+printf STDERR "\n";
+printf STDERR "-" x 80 . "\n";
+printf STDERR "  Creating simple filetrees\n";
+printf STDERR "-" x 80 . "\n";
+
+@source = DocUtils->FindFiles(path    => $Config::htmlDir,
+                              pattern => '.*\.html$');
+
 my @dir = DocUtils->ExtractDirectories(files => \@source,
                                        allParentDirectories => 1);
 push(@dir, ".");
 
 my @sourcefile = Filetree->CompressFileList(\@source);
 
-print STDERR "\n";
-print STDERR "[INFO] Creating filetrees:\n";
-
 foreach my $dir (@dir) {
     print STDERR "[INFO] Creating filetree for \"$dir/\"\n";
 
-    my $filename = File::Spec->catfile($Config::htmlDir, $dir, "dir.html");
+    my $absDir = File::Spec->catfile($Config::htmlDir, $dir);
+    my $filename = File::Spec->catfile($absDir, "dir.html");
     my $filetree = Filetree->new(directory   => $dir,
                                  allFiles    => \@sourcefile);
 
-    my $relDir = File::Spec->abs2rel("", $dir);
-
-    if ($dir eq ".") {
-        $relDir = ".";
-        $dir    = "";
-    }
+    my $relTopDir = File::Spec->abs2rel($Config::htmlDir, $absDir);
 
     my $htmlVars = {
         "TITLE"         => "/". $dir,
-        "DEFAULT_CSS"   => File::Spec->catfile($relDir, $Config::css),
-        "WZ_TOOLTIP_JS" => File::Spec->catfile($relDir, $Config::tooltip),
+        "DEFAULT_CSS"   => File::Spec->catfile($relTopDir, $Config::css),
+        "WZ_TOOLTIP_JS" => File::Spec->catfile($relTopDir, $Config::tooltip),
         "FILETREE"      => "",
     };
 
@@ -205,7 +243,7 @@ foreach my $dir (@dir) {
                              linesRef => $header,
                              filter   => $htmlVars);
     DocUtils->SaveLinebuffer(file     => $filename,
-                             linesRef => $filetree->html(dir => $dir),
+                             linesRef => $filetree->html(),
                              append   => 1,
                              filter   => $htmlVars);
     DocUtils->SaveLinebuffer(file     => $filename,
@@ -216,25 +254,4 @@ foreach my $dir (@dir) {
 
     print STDERR "[INFO]  ... done.\n";
 }
-
-
-
-#  foreach my $sub (keys %Deps::external) {
-#      printf STDERR "Creating call graph for '$sub' ...";
-#      Deps->Dump(call => $sub);
-#      printf STDERR " done.\n";
-#
-#      printf STDERR "Creating caller graph for '$sub' ...";
-#      Deps->Dump(caller => $sub);
-#      printf STDERR " done.\n";
-#  }
-
-#  Deps->Dump(call => "dlapy2");
-#  Deps->Dump(caller => "dlapy2");
-#
-#  Deps->Dump(call => "dgeqp3");
-#  Deps->Dump(caller => "dgeqp3");
-#
-#  Deps->Dump(call => "dgeqrf");
-#  Deps->Dump(caller => "dgeqrf");
 

@@ -5,11 +5,13 @@ BEGIN {
     our $sourcefile;
     our $lino_prefix = "";
     our $src_dir_prefix = "";
+    our $hasDoc;
 
 }
 
 use strict;
 use Deps;
+use Cwd;
 use DocUtils;
 use File::Basename;
 
@@ -20,9 +22,16 @@ sub Fortran
                 crashfile      => undef,
                 linenumbers    => undef,
                 src_dir_prefix => undef,
+                lino_prefix    => undef,
+                cwd            => cwd(),
                 @_);
+
+    $Convert::base           = $args{cwd};
     $Convert::sourcefile     = $args{sourcefile};
-    $Convert::lino_prefix    = $args{sourcefile} . "_line";
+    $Convert::hasDoc         = Doc->HasDoc(sourceFile => $Convert::sourcefile);
+    $Convert::lino_prefix    = defined($args{lino_prefix})
+                               ? $args{lino_prefix}
+                               : $args{sourcefile} . "_line";
     $Convert::src_dir_prefix = $args{src_dir_prefix};
 
     my @linebuffer = @{DocUtils->LoadLinebuffer(file => $args{sourcefile})};
@@ -30,8 +39,15 @@ sub Fortran
 
     my %crash = _crashImport($args{crashfile});
 
+    my $step = 0;
+
     for (my $line=0; $line<=$#linebuffer; ++$line) {
         my $str = $linebuffer[$line];
+
+        if ($line > $step * $#linebuffer / 50) {
+            printf STDERR ".";
+            ++$step;
+        }
 
         my $tpos = index($str, "\t");
         if ($tpos>=0 && $tpos<6) {
@@ -65,6 +81,7 @@ sub Fortran
 
         push(@html, "$str<br>");
     }
+    printf STDERR "\n";
 
 
     my $css = ($args{linenumbers}) ? " code_with_linenumbers" : "";
@@ -128,7 +145,7 @@ sub _highlight
     my $entry          = shift;
 
     my $lino = $Convert::lino_prefix;
-    my $hasDoc = Doc->HasDoc(sourceFile => $Convert::sourcefile);
+    my $hasDoc = $Convert::hasDoc;
 
 
 
@@ -146,7 +163,7 @@ sub _highlight
 
         my $href = basename($srcfile, ".f") . ".html";
         $href = File::Spec->catfile($srcdir, $href);
-        $href = File::Spec->abs2rel($href);
+        $href = File::Spec->abs2rel($href, $Convert::base);
         $href = $href . "#" . lc($entry->{content});
 
         return "<a class=\"$entry->{type}\" href=\"$href\">$str</a>";
@@ -161,7 +178,7 @@ sub _highlight
 
         my $href = basename($srcfile, ".f") . ".html";
         $href = File::Spec->catfile($srcdir, $href);
-        $href = File::Spec->abs2rel($href);
+        $href = File::Spec->abs2rel($href, $Convert::base);
 
         return "<a class=\"$entry->{type}\" href=\"$href\">$str</a>";
     }
@@ -181,7 +198,7 @@ sub _highlight
         if ($#defs==0) {
 
             my $href = $defs[0]->{file};
-            $href = File::Spec->abs2rel($href);
+            $href = File::Spec->abs2rel($href, $Convert::base);
             $href = $href . ".html#" . $defs[0]->{line};
 
             return "<a class=\"$entry->{type}\" href=\"$href\">$str</a>";
@@ -213,7 +230,7 @@ sub _highlight
 
             foreach my $defs (@defs) {
                 my $href = $defs->{file};
-                $href = File::Spec->abs2rel($href, $srcdir);
+                $href = File::Spec->abs2rel($href, $Convert::base);
                 $href = $href . ".html#" . $defs->{line};
 
                 my $file = $defs->{file};

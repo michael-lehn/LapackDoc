@@ -1,5 +1,6 @@
 package Filetree;
 use strict;
+use File::Basename;
 use File::Spec;
 
 sub new
@@ -91,8 +92,9 @@ sub html
     my $self = shift;
 
     my @html;
-    $self->FileTreeHtmlDump(fileTree => $self->{fileTree},
-                            html     => \@html);
+    $self->FileTreeHtmlDump(fileTree  => $self->{fileTree},
+                            directory => $self->{directory},
+                            html      => \@html);
     return \@html;
 }
 
@@ -123,13 +125,14 @@ sub FileTreeHtmlDump
             my @links;
             my $listItem = $file;
             foreach my $ext (sort @ext) {
-                #my $docId = DocUtils->CreateFullpath(path      => $args{path},
-                #                                     basename  => $file,
-                #                                     extension => $ext);
-                #$docId = "file:" . $docId;
 
-                my $link = "#1"; # Html->MakeLink(fromDocEnv => $docEnv,
-                                #          toDocEnv => $docId);
+                my $link = $file;
+                if ($ext eq "doc") {
+                    $link = $link . ".html";
+                } elsif ($ext eq "source") {
+                    $link = $link . ".f.html";
+                }
+
                 if ($ext eq "doc") {
                     $listItem = "<a href=\"$link\">$file</a>";
                     next;
@@ -153,18 +156,20 @@ sub FileTreeHtmlDump
 
             if (scalar(keys %{$subTree})!=0) {
                 my $parent = DocUtils->ParentDirectory(path => $currentPath);
-                my $link = "#2"; #Html->MakeLink(fromDocEnv => $docEnv,
-                                #          toDocEnv => "dir:$parent/");
+                my $link = File::Spec->catfile("..", "dir.html");
                 $link = "<a href=\"$link\">$item</a>";
 
                 push(@{$args{html}}, "<li $css>$mark$link");
-                $class->FileTreeHtmlDump(fileTree => $subTree,
-                                         html     => $args{html},
-                                         path     => $currentPath);
+                $class->FileTreeHtmlDump(fileTree  => $subTree,
+                                         html      => $args{html},
+                                         directory => $args{directory},
+                                         path      => $currentPath);
                 push(@{$args{html}}, "</li>");
             } else {
-                my $link = "#3";  # Html->MakeLink(fromDocEnv => $docEnv,
-                                 #         toDocEnv => "dir:$currentPath/");
+                my $link = File::Spec->catfile($currentPath, "dir.html");
+
+                $link = File::Spec->abs2rel($link, $args{directory});
+
                 $link = "<a href=\"$link\">$item/</a>";
                 push(@{$args{html}}, "<li $css>$mark$link</li>");
             }
@@ -179,18 +184,28 @@ sub CompressFileList
     my ($class, $files) = @_;
 
     my %files;
+    my $type;
     foreach my $file (@{$files}) {
-        if ($file =~ s/\.([^.]*$)//) {
-            my $ext = $1;
 
-            # add file $file to %file
+        my ($filename, $dir) = fileparse($file);
+
+        if ($filename eq "dir.html") {
+            next;
+        }
+
+        $type = undef;
+        if ($file =~ s/\.f\.html$//) {
+            $type = "source";
+        }
+        if ($file =~ s/\.html$//) {
+            $type = "doc";
+        }
+
+        if ($type) {
             unless (defined $files{$file}) {
-                $files{$file} = [$ext];
-            } else {
-                push(@{$files{$file}}, $ext);
+                $files{$file} = [];
             }
-        } else {
-            warn "[WARNING]  Unkown file type: $file\n";
+            push(@{$files{$file}}, $type);
         }
     }
 

@@ -1,6 +1,7 @@
 package Doc;
 use strict;
 use DocUtils;
+use Cwd;
 use File::Basename;
 use File::Spec;
 
@@ -11,9 +12,12 @@ BEGIN {
     our $inArgsSection = undef;
     our $addEmptyLine  = undef;
 
-    our @subdef    = ();
-    our @arguments = ();
-    our %crash     = ();
+    our @subdef       = ();
+    our @arguments    = ();
+    our $argStartPos  = undef;
+    our $argDescrPos  = 0;
+    our %crash        = ();
+    our %hasDoc       = ();
 
     our $srcFile   = undef;
     our $srcDir    = undef;
@@ -26,13 +30,25 @@ sub HasDoc
     my %args = (sourceFile => undef,
                 @_);
 
-    my $linebuffer = DocUtils->LoadLinebuffer(file => $args{sourceFile});
-    $linebuffer    = _getEmbeddedDoc($linebuffer);
-    unless ($linebuffer) {
-        # printf STDERR "$args{sourceFile} does not contain documentation\n";
-        return undef;
+    my $file = $args{sourceFile};
+
+    if (defined $Doc::hasDoc{$file}) {
+        if ($Doc::hasDoc{$file}==1) {
+            return 1;
+        } else {
+            return undef;
+        }
+    } else {
+        my $linebuffer = DocUtils->LoadLinebuffer(file => $file);
+        if (_hasEmbeddedDoc($linebuffer)) {
+            $Doc::hasDoc{$file} = 1;
+            return 1;
+        } else {
+            $Doc::hasDoc{$file} = 0;
+            return undef;
+        }
     }
-    return $linebuffer;
+    return 1;
 }
 
 sub Extract
@@ -40,18 +56,27 @@ sub Extract
     my $class = shift;
     my %args = (sourceFile => undef,
                 crashFile  => undef,
+                cwd        => cwd(),
                 @_);
 
     my ($srcfilename, $srcdir) = fileparse($args{sourceFile});
+
+    $Doc::base    = $args{cwd};
     $Doc::srcFile = File::Spec->catfile($srcdir, $srcfilename . ".html");
-    $Doc::srcFile = File::Spec->abs2rel($Doc::srcFile);
+    $Doc::srcFile = File::Spec->abs2rel($Doc::srcFile, $Doc::base);
     $Doc::srcDir  = $srcdir;
     $Doc::subName = undef;
 
-    my $linebuffer = $class->HasDoc(sourceFile => $args{sourceFile});
-    unless ($linebuffer) {
-        # printf STDERR "$args{sourceFile} does not contain documentation\n";
+    unless ($class->HasDoc(sourceFile => $args{sourceFile})) {
         return undef;
+    }
+
+    my $linebuffer = DocUtils->LoadLinebuffer(file => $args{sourceFile});
+    $linebuffer = _getEmbeddedDoc($linebuffer);
+
+    if ($#{$linebuffer}<0) {
+        printf STDERR "[WARNING]  File '$args{sourceFile}' seems to contain ".
+                      "documentation which could not be extracted.\n";
     }
 
     if ($args{crashFile}) {
@@ -132,35 +157,66 @@ sub Extract
 sub AddGraphs
 {
     my $class = shift;
-    my %args = (htmlRef => undef,
+    my %args = (htmlRef    => undef,
+                path       => undef,
+                callDump   => undef,
+                callerDump => undef,
                 @_);
 
     my $iframeOpts = "width=\"90%\" height=\"400\" name=\"graph\"";
     $iframeOpts .= " frameborder=\"0\" scrolling=\"yes\" ";
 
     my $src;
+    my $svg;
     my $absSrc;
+    my $absSvg;
 
-    $src    = File::Spec->catfile("graphs", lc($Doc::subName).".call.svg");
+    return unless $Doc::subName;
+
+    $src    = File::Spec->catfile($args{path}, lc($Doc::subName).".call");
+    $svg    = File::Spec->catfile($args{path}, lc($Doc::subName).".call.svg");
     $absSrc = File::Spec->catfile($Config::htmlDir, $src);
-    if (-e $absSrc) {
-        _addSection(%args, name => "Call Graph");
-        $src = File::Spec->abs2rel($src, $Doc::srcDir);
+    $absSvg = File::Spec->catfile($Config::htmlDir, $svg);
+    if ($args{callDump}) {
+        if ($#{$args{callDump}}>2000) {
+            printf STDERR "  Skipping conversion (more than 2000 lines).\n";
+        } else {
+            DocUtils->SaveLinebuffer(file => $absSrc,
+                                     linesRef => $args{callDump});
 
-        push(@{$args{htmlRef}}, "<iframe src=\"$src\" $iframeOpts>");
-        push(@{$args{htmlRef}}, "</iframe>");
-    } else {
-        printf STDERR "File $absSrc does not exist\n";
+            printf STDERR "  Converting call graph to SVG ... ";
+            system("dot -Tsvg -o $absSvg $absSrc");
+            printf STDERR "done.\n";
+
+            _addSection(%args, name => "Call Graph");
+            $svg = File::Spec->abs2rel($svg, $Doc::base);
+
+            push(@{$args{htmlRef}}, "<iframe src=\"$svg\" $iframeOpts>");
+            push(@{$args{htmlRef}}, "</iframe>");
+        }
     }
 
-    $src    = File::Spec->catfile("graphs", lc($Doc::subName).".caller.svg");
+    $src    = File::Spec->catfile($args{path}, lc($Doc::subName).".caller");
+    $svg    = File::Spec->catfile($args{path}, lc($Doc::subName).".caller.svg");
     $absSrc = File::Spec->catfile($Config::htmlDir, $src);
-    if (-e $absSrc) {
-        _addSection(%args, name => "Caller Graph");
-        $src = File::Spec->abs2rel($src, $Doc::srcDir);
+    $absSvg = File::Spec->catfile($Config::htmlDir, $svg);
+    if ($args{callerDump}) {
+        if ($#{$args{callerDump}}>2000) {
+            printf STDERR "  Skipping conversion (more than 2000 lines).\n";
+        } else {
+            DocUtils->SaveLinebuffer(file => $absSrc,
+                                     linesRef => $args{callerDump});
 
-        push(@{$args{htmlRef}}, "<iframe src=\"$src\" $iframeOpts>");
-        push(@{$args{htmlRef}}, "</iframe>");
+            printf STDERR "  Converting caller graph to SVG ... ";
+            system("dot -Tsvg -o $absSvg $absSrc");
+            printf STDERR "done.\n";
+
+            _addSection(%args, name => "Caller Graph");
+            $svg = File::Spec->abs2rel($svg, $Doc::base);
+
+            push(@{$args{htmlRef}}, "<iframe src=\"$svg\" $iframeOpts>");
+            push(@{$args{htmlRef}}, "</iframe>");
+        }
     }
 }
 
@@ -214,11 +270,19 @@ sub _addLine
                 line    => undef,
                 @_);
 
-    if ($Doc::inArgsSection) {
-        if ($args{line} =~ /^\s*([A-Z0-9_]+)\s+[\s-]*\s*(\S.*)$/) {
-            my $entry = {varname => $1, type => $2, description => []};
-            $entry->{type} =~ s/ /&nbsp;/g;
+    my $p = defined($Doc::argStartPos) ? $Doc::argStartPos : 10;
 
+    if ($Doc::inArgsSection) {
+        if ($args{line} =~ /^(\s{0,$p})([A-Z0-9_]+)(\s+[\s-]*\s*)(\S.*)$/) {
+            unless (defined $Doc::argStartPos) {
+                $Doc::argStartPos = length($1);
+            }
+            $Doc::argDescrPos = length($1) + length($2) + length($3);
+            my $entry = {varname     => $2,
+                         type        => $4,
+                         description => []
+                        };
+            $entry->{type} =~ s/ /&nbsp;/g;
 
             push(@Doc::arguments, $entry);
             $Doc::addEmptyLine = undef;
@@ -227,9 +291,15 @@ sub _addLine
         unless ($#Doc::arguments>=0) {
             printf STDERR "line=$args{line}\n";
             printf STDERR "Died in src $Doc::srcFile\n";
+            printf STDERR "   \$p = $p\n";
+            $args{line} =~ /^(\s{0,$p})([A-Z0-9_]+)(\s+[\s-]*\s*)(\S.*)$/;
+            printf STDERR "   \$1 = $1\n";
+            printf STDERR "   \$2 = $2\n";
+            printf STDERR "   \$3 = $3\n";
+            printf STDERR "   \$4 = $4\n";
             die;
         }
-        $args{line} =~ s/^\s*//;
+        $args{line} =~ s/^\s{0,$Doc::argDescrPos}//;
         $args{htmlRef} = $Doc::arguments[-1]->{description};
     }
 
@@ -302,7 +372,8 @@ sub _flushArgs
         }
         push(@{$html}, "</table>");
     }
-    @Doc::arguments = ();
+    @Doc::arguments   = ();
+    $Doc::argStartPos = undef;
 }
 
 sub _addSection
@@ -357,6 +428,10 @@ sub _getEmbeddedDoc
 {
     my @linebuffer = @{$_[0]};
 
+#
+#   Typically the embedded documentation is terminated by an empty line followed
+#   by a line containing only '=' characters.
+#
     for (my $i=0; $i<$#linebuffer; ++$i) {
         unless ($linebuffer[$i] =~ /^\*\s*$/) {
             next;
@@ -365,6 +440,35 @@ sub _getEmbeddedDoc
             my @doc = @linebuffer[0..$i];
             _rtrim(@doc);
             return \@doc;
+        }
+    }
+#
+#   In some cases the empty line is missing in LAPACK.  So we also look
+#   for a line only containing '=' characters which do not belong to the
+#   underlining of a section.  That means the length of the previous line
+#   must be shorter.
+#
+    for (my $i=0; $i<$#linebuffer; ++$i) {
+        if ($linebuffer[$i+1] =~ /^\*\s*=+$/) {
+            if (length($linebuffer[$i])>=length($linebuffer[$i+1])) {
+                next;
+            }
+            my @doc = @linebuffer[0..$i];
+            _rtrim(@doc);
+            return \@doc;
+        }
+    }
+
+    return undef;
+}
+
+sub _hasEmbeddedDoc
+{
+    my @linebuffer = @{$_[0]};
+
+    for (my $i=0; $i<$#linebuffer; ++$i) {
+        if ($linebuffer[$i+1] =~ /^\*\s*=+$/) {
+            return 1;
         }
     }
     return undef;

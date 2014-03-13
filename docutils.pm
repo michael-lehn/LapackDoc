@@ -282,6 +282,8 @@ sub Install
         die;
     }
 
+    DocUtils->Mkdir(path => $args{to});
+
     my $filename = fileparse($args{file});
     my $newfile  = File::Spec->catfile($args{to}, $filename);
 
