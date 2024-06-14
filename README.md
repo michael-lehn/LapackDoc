@@ -5,10 +5,11 @@ Have a look:
 
 1. How LapackDoc works and what's so challenging
 
-   http://apfel.mathematik.uni-ulm.de/~lehn/LapackDoc/index.html
+   https://www.mathematik.uni-ulm.de/~lehn/apfel/LapackDoc/index.html
+   
 
 2. How the Lapack Documentation looks like:
 
-   http://apfel.mathematik.uni-ulm.de/~lehn/lapack-3.3.1/SRC/dgetrf.html
+   https://www.mathematik.uni-ulm.de/~lehn/apfel/lapack-3.3.1/SRC/dgetrf.html
 
-   http://apfel.mathematik.uni-ulm.de/~lehn/lapack-3.3.1/SRC/dgetrf.f.html
+   https://www.mathematik.uni-ulm.de/~lehn/apfel/lapack-3.3.1/SRC/dgetrf.f.html
